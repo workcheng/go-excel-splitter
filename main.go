@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
+	"unsafe"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -18,6 +20,52 @@ import (
 	"fyne.io/fyne/v2/widget"
 	"github.com/xuri/excelize/v2"
 )
+
+// Windows API声明
+var (
+	user32               = syscall.NewLazyDLL("user32.dll")
+	procEnumWindows      = user32.NewProc("EnumWindows")
+	procGetWindowTextW   = user32.NewProc("GetWindowTextW")
+	procDragAcceptFiles  = user32.NewProc("DragAcceptFiles") // 只有一个版本
+	procDragQueryFile    = user32.NewProc("DragQueryFileW")  // 有Unicode版本
+	procDragFinish       = user32.NewProc("DragFinish")      // 只有一个版本
+	procSetWindowLongPtr = user32.NewProc("SetWindowLongPtrW")
+	procGetWindowLongPtr = user32.NewProc("GetWindowLongPtrW")
+	procCallWindowProc   = user32.NewProc("CallWindowProcW")
+
+	// 消息常量
+	WM_DROPFILES = uint32(0x0233)
+	GWLP_WNDPROC uintptr
+)
+
+// 找到的窗口句柄
+var foundHWND syscall.Handle
+
+// EnumWindows回调函数
+var enumWindowsCallback = syscall.NewCallback(func(hwnd syscall.Handle, lparam uintptr) uintptr {
+	// 获取窗口标题
+	buf := make([]uint16, 1024)
+	r1, _, _ := procGetWindowTextW.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+
+	if r1 > 0 {
+		windowTitle := syscall.UTF16ToString(buf[:r1])
+		// 检查窗口标题是否包含我们的应用名称
+		if strings.Contains(windowTitle, "Excel闪电拆分工具") {
+			foundHWND = hwnd
+			fmt.Printf("找到窗口: %s, 句柄: %x\n", windowTitle, hwnd)
+			return 0 // 停止枚举
+		}
+	}
+
+	return 1 // 继续枚举
+})
+
+func init() {
+	// 初始化窗口过程常量
+	// 在32位和64位系统上，-4的uintptr表示方式不同
+	var temp int32 = -4
+	GWLP_WNDPROC = uintptr(temp)
+}
 
 // FileCleaner 清理非法文件名字符
 var fileCleaner = regexp.MustCompile(`[\\/:*?"<>|]`)
@@ -30,6 +78,54 @@ func cleanFilename(name string) string {
 	}
 	return strings.TrimSpace(cleaned)
 }
+
+// 原窗口过程函数指针
+var originalWndProc uintptr
+
+// 窗口过程回调函数
+var wndProcCallback = syscall.NewCallback(func(hwnd syscall.Handle, msg uint32, wparam uintptr, lparam uintptr) uintptr {
+	if msg == WM_DROPFILES {
+		// 处理拖放文件
+		var fileCount uint32
+
+		// 获取文件数量
+		r1, _, _ := procDragQueryFile.Call(wparam, uintptr(^uint32(0)), 0, 0)
+		fileCount = uint32(r1)
+
+		if fileCount > 0 {
+			// 只处理第一个文件
+			buf := make([]uint16, 1024)
+			r1, _, _ := procDragQueryFile.Call(wparam, 0, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+			if r1 > 0 {
+				filePath := syscall.UTF16ToString(buf[:r1])
+				// 检查是否为Excel文件
+				if strings.HasSuffix(strings.ToLower(filePath), ".xlsx") || strings.HasSuffix(strings.ToLower(filePath), ".xls") {
+					// 更新全局输入文件变量
+					inputFile = filePath
+					// 更新状态标签
+					statusLabel.SetText(fmt.Sprintf("已选择: %s", filepath.Base(filePath)))
+				}
+			}
+		}
+
+		// 完成拖放处理
+		procDragFinish.Call(wparam)
+		return 0
+	}
+
+	// 调用原窗口过程
+	ret, _, _ := procCallWindowProc.Call(originalWndProc, uintptr(hwnd), uintptr(msg), wparam, lparam)
+	return ret
+})
+
+// 全局变量用于窗口过程访问
+// 全局变量
+var (
+	inputFile   string
+	outputDir   string
+	statusLabel *widget.Label
+	myWindow    fyne.Window // 全局窗口变量，用于拖放处理
+)
 
 // generateKey 生成文件名
 func generateKey(row map[string]string) string {
@@ -255,18 +351,20 @@ func splitExcelParallel(inputFile, outputFolder string, maxWorkers int) ([]strin
 // guiVersion GUI版本
 func guiVersion() {
 	myApp := app.New()
-	myWindow := myApp.NewWindow("Excel闪电拆分工具")
-	myWindow.Resize(fyne.NewSize(450, 250))
+	myWindow = myApp.NewWindow("Excel闪电拆分工具") // 赋值给全局变量
+	myWindow.Resize(fyne.NewSize(450, 350))
 
 	label := widget.NewLabel("Excel闪电拆分工具\n速度比VBA快10-20倍")
 	label.Alignment = fyne.TextAlignCenter
 
-	statusLabel := widget.NewLabel("提示：可以将Excel文件直接拖放到窗口中")
+	statusLabel = widget.NewLabel("提示：可以将Excel文件直接拖放到下方区域")
 	statusLabel.Alignment = fyne.TextAlignCenter
 
-	var inputFile string
 	var outputFolder string
 	var runBtn *widget.Button
+
+	// 重置全局变量
+	inputFile = ""
 
 	// 添加一个简单的拖放支持：检查命令行参数
 	// 如果用户拖放文件到可执行文件上，会作为命令行参数传递
@@ -279,6 +377,36 @@ func guiVersion() {
 			statusLabel.SetText(fmt.Sprintf("已选择: %s", filepath.Base(inputFile)))
 		}
 	}
+
+	// 创建拖放区域（使用简单的标签提示）
+	dropArea := container.NewVBox(
+		widget.NewLabelWithStyle("拖放Excel文件到此处", fyne.TextAlignCenter, fyne.TextStyle{Italic: true}),
+		widget.NewLabelWithStyle("（或使用下方按钮选择文件）", fyne.TextAlignCenter, fyne.TextStyle{}),
+	)
+
+	// 设置拖放区域大小
+	dropArea.Resize(fyne.NewSize(400, 100))
+
+	// 使用Fyne v2.7.1的正确拖放API：Window.SetOnDropped
+	myWindow.SetOnDropped(func(pos fyne.Position, uris []fyne.URI) {
+		if len(uris) > 0 {
+			// 获取第一个拖放的文件URI
+			fileURI := uris[0]
+			filePath := fileURI.Path()
+
+			// 处理Windows路径格式
+			filePath = strings.ReplaceAll(filePath, "/", "\\")
+
+			// 检查是否是Excel文件
+			if strings.HasSuffix(strings.ToLower(filePath), ".xlsx") || strings.HasSuffix(strings.ToLower(filePath), ".xls") {
+				inputFile = filePath
+				statusLabel.SetText(fmt.Sprintf("已选择: %s", filepath.Base(inputFile)))
+			} else {
+				// 如果没有找到有效的Excel文件，显示错误
+				dialog.ShowInformation("错误", "请拖放有效的Excel文件（.xlsx或.xls格式）", myWindow)
+			}
+		}
+	})
 
 	inputBtn := widget.NewButton("选择Excel文件", func() {
 		dialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
@@ -344,6 +472,8 @@ func guiVersion() {
 	content := container.NewVBox(
 		label,
 		widget.NewSeparator(),
+		dropArea,
+		widget.NewSeparator(),
 		inputBtn,
 		outputBtn,
 		widget.NewSeparator(),
@@ -353,6 +483,11 @@ func guiVersion() {
 	)
 
 	myWindow.SetContent(content)
+
+	// 注意：Windows API拖放功能已移除，
+	// 当前版本使用命令行参数处理拖放文件（当用户将文件拖放到可执行文件上时）
+
+	// 显示窗口
 	myWindow.ShowAndRun()
 }
 
