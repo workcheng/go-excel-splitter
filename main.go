@@ -261,12 +261,24 @@ func guiVersion() {
 	label := widget.NewLabel("Excel闪电拆分工具\n速度比VBA快10-20倍")
 	label.Alignment = fyne.TextAlignCenter
 
-	statusLabel := widget.NewLabel("")
+	statusLabel := widget.NewLabel("提示：可以将Excel文件直接拖放到窗口中")
 	statusLabel.Alignment = fyne.TextAlignCenter
 
 	var inputFile string
 	var outputFolder string
 	var runBtn *widget.Button
+
+	// 添加一个简单的拖放支持：检查命令行参数
+	// 如果用户拖放文件到可执行文件上，会作为命令行参数传递
+	// 注意：这里只在GUI模式下处理命令行参数作为拖放
+	if len(os.Args) > 1 {
+		filePath := os.Args[1]
+		// 检查文件是否为Excel文件
+		if strings.HasSuffix(strings.ToLower(filePath), ".xlsx") || strings.HasSuffix(strings.ToLower(filePath), ".xls") {
+			inputFile = filePath
+			statusLabel.SetText(fmt.Sprintf("已选择: %s", filepath.Base(inputFile)))
+		}
+	}
 
 	inputBtn := widget.NewButton("选择Excel文件", func() {
 		dialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
@@ -351,30 +363,40 @@ func main() {
 	for i, arg := range os.Args {
 		fmt.Printf("参数 %d: %s\n", i, arg)
 	}
+
 	// 命令行模式
 	if len(os.Args) > 1 {
-		fmt.Printf("正在处理文件: %s\n", os.Args[1])
-		inputFile := os.Args[1]
-		outputFolder := "."
-		if len(os.Args) > 2 {
-			outputFolder = os.Args[2]
-			fmt.Printf("输出文件夹: %s\n", outputFolder)
-		}
-
-		fmt.Println("开始调用splitExcelParallel函数...")
-		_, elapsed, err := splitExcelParallel(inputFile, outputFolder, 0)
-		if err != nil {
-			fmt.Printf("错误: %v\n", err)
-			os.Exit(1)
-		}
-
-		// 显示耗时
-		minutes := int(elapsed.Minutes())
-		seconds := elapsed.Seconds()
-		if minutes > 0 {
-			fmt.Printf("\n⏱️  总耗时: %d分 %.2f秒\n", minutes, seconds)
+		// 检查是否是GUI模式的拖放操作
+		filePath := os.Args[1]
+		if strings.HasSuffix(strings.ToLower(filePath), ".xlsx") || strings.HasSuffix(strings.ToLower(filePath), ".xls") {
+			// 启动GUI模式并处理拖放的文件
+			fmt.Println("启动GUI界面并处理拖放的文件...")
+			guiVersion()
 		} else {
-			fmt.Printf("\n⏱️  总耗时: %.2f秒\n", seconds)
+			// 命令行模式
+			fmt.Printf("正在处理文件: %s\n", os.Args[1])
+			inputFile := os.Args[1]
+			outputFolder := "."
+			if len(os.Args) > 2 {
+				outputFolder = os.Args[2]
+				fmt.Printf("输出文件夹: %s\n", outputFolder)
+			}
+
+			fmt.Println("开始调用splitExcelParallel函数...")
+			_, elapsed, err := splitExcelParallel(inputFile, outputFolder, 0)
+			if err != nil {
+				fmt.Printf("错误: %v\n", err)
+				os.Exit(1)
+			}
+
+			// 显示耗时
+			minutes := int(elapsed.Minutes())
+			seconds := elapsed.Seconds()
+			if minutes > 0 {
+				fmt.Printf("\n⏱️  总耗时: %d分 %.2f秒\n", minutes, seconds)
+			} else {
+				fmt.Printf("\n⏱️  总耗时: %.2f秒\n", seconds)
+			}
 		}
 	} else {
 		// 启动GUI
