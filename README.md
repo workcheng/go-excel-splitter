@@ -43,6 +43,13 @@ go mod tidy
 
 ```bash
 go build
+# 命令行模式
+go run main.go input.xlsx output_folder
+
+# 编译GUI版本（Windows）
+go build -ldflags="-s -w -H windowsgui" -o Excel拆分.exe main.go
+# 编译命令行版本
+go build -o excel-splitter main.go                                          
 ```
 
 ### 运行应用
