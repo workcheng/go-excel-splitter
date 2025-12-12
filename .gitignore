@@ -4,9 +4,9 @@
 *.o
 *.so
 
-# 依赖文件
-go.mod
-go.sum
+# 依赖文件（在Go项目中，go.mod和go.sum通常应该提交到版本控制）
+# go.mod
+# go.sum
 
 # 测试文件
 *_test.go
