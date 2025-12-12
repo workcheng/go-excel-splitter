@@ -1,0 +1,29 @@
+# 编译后的可执行文件
+*.exe
+*.out
+*.o
+*.so
+
+# 依赖文件
+go.mod
+go.sum
+
+# 测试文件
+*_test.go
+*.test
+
+# 临时文件
+*.tmp
+*.temp
+
+# 日志文件
+*.log
+
+# IDE配置文件
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 输出文件夹
+output_folder/
