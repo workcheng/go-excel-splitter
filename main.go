@@ -352,7 +352,8 @@ func splitExcelParallel(inputFile, outputFolder string, maxWorkers int) ([]strin
 func guiVersion() {
 	myApp := app.New()
 	myWindow = myApp.NewWindow("Excel闪电拆分工具") // 赋值给全局变量
-	myWindow.Resize(fyne.NewSize(450, 350))
+	// 设置窗口大小为更适合一般应用的尺寸
+	myWindow.Resize(fyne.NewSize(800, 600))
 
 	label := widget.NewLabel("Excel闪电拆分工具\n速度比VBA快10-20倍")
 	label.Alignment = fyne.TextAlignCenter
@@ -518,8 +519,8 @@ func showCopyableDialog(title, content string, win fyne.Window) {
 	dialog := dialog.NewCustom(title, "关闭",
 		scrollContainer, win)
 
-	// 设置对话框大小
-	dialog.Resize(fyne.NewSize(500, 300))
+	// 设置对话框大小，与新窗口比例协调
+	dialog.Resize(fyne.NewSize(600, 400))
 
 	// 显示对话框
 	dialog.Show()
