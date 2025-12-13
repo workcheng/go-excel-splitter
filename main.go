@@ -409,10 +409,12 @@ func guiVersion() {
 			if strings.HasSuffix(strings.ToLower(filePath), ".xlsx") || strings.HasSuffix(strings.ToLower(filePath), ".xls") {
 				inputFile = filePath
 
-				// 自动生成输出文件夹路径：输入文件所在文件夹 + "（拆分）"
+				// 自动生成输出文件夹路径：输入文件所在文件夹 + 文件名（无扩展名） + "（拆分）"
 				inputDir := filepath.Dir(inputFile)
-				inputDirName := filepath.Base(inputDir)
-				outputFolder = filepath.Join(inputDir, inputDirName+"（拆分）")
+				inputFileName := filepath.Base(inputFile)
+				// 移除文件扩展名
+				inputFileNameWithoutExt := strings.TrimSuffix(inputFileName, filepath.Ext(inputFileName))
+				outputFolder = filepath.Join(inputDir, inputFileNameWithoutExt+"（拆分）")
 
 				// 检查文件夹是否存在，如果不存在则创建
 				if _, err := os.Stat(outputFolder); os.IsNotExist(err) {
@@ -444,10 +446,12 @@ func guiVersion() {
 			inputFile = reader.URI().Path()
 			statusLabel.SetText(fmt.Sprintf("已选择: %s", filepath.Base(inputFile)))
 
-			// 自动生成输出文件夹路径：输入文件所在文件夹 + "（拆分）"
+			// 自动生成输出文件夹路径：输入文件所在文件夹 + 文件名（无扩展名） + "（拆分）"
 			inputDir := filepath.Dir(inputFile)
-			inputDirName := filepath.Base(inputDir)
-			outputFolder = filepath.Join(inputDir, inputDirName+"（拆分）")
+			inputFileName := filepath.Base(inputFile)
+			// 移除文件扩展名
+			inputFileNameWithoutExt := strings.TrimSuffix(inputFileName, filepath.Ext(inputFileName))
+			outputFolder = filepath.Join(inputDir, inputFileNameWithoutExt+"（拆分）")
 
 			// 检查文件夹是否存在，如果不存在则创建
 			if _, err := os.Stat(outputFolder); os.IsNotExist(err) {
