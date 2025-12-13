@@ -448,12 +448,14 @@ func guiVersion() {
 				runBtn.Enable()
 			}()
 
-			_, elapsed, err := splitExcelParallel(inputFile, outputFolder, 8)
+			r, elapsed, err := splitExcelParallel(inputFile, outputFolder, 8)
 			if err != nil {
 				dialog.ShowError(err, myWindow)
 				statusLabel.SetText(fmt.Sprintf("错误: %v", err))
 				return
 			}
+
+			fmt.Printf("执行结果: %s \n", r)
 
 			// 格式化耗时
 			minutes := int(elapsed.Minutes())
@@ -463,7 +465,7 @@ func guiVersion() {
 				timeStr = fmt.Sprintf("%.2f秒", seconds)
 			}
 
-			dialog.ShowInformation("完成", fmt.Sprintf("✅ 拆分完成！\n\n总耗时: %s", timeStr), myWindow)
+			dialog.ShowInformation("完成", fmt.Sprintf("✅ 拆分完成！\n\n总耗时: %s\n\n执行结果:\n%s", timeStr, r), myWindow)
 			statusLabel.SetText("处理完成！")
 		}()
 	})
