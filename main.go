@@ -355,8 +355,15 @@ func guiVersion() {
 	// 设置窗口大小为更适合一般应用的尺寸
 	myWindow.Resize(fyne.NewSize(800, 600))
 
-	label := widget.NewLabel("Excel闪电拆分工具\n速度比VBA快10-20倍")
-	label.Alignment = fyne.TextAlignCenter
+	// 使用两个Label组件分别显示主标题和副标题
+	mainLabel := widget.NewLabel("Excel闪电拆分工具")
+	mainLabel.Alignment = fyne.TextAlignCenter
+
+	// 创建副标题
+	subLabel := widget.NewLabel("速度比VBA快10-20倍")
+	subLabel.Alignment = fyne.TextAlignCenter
+	// 通过调整Label的大小来间接调整文本大小
+	subLabel.Resize(fyne.NewSize(400, 20))
 
 	statusLabel = widget.NewLabel("提示：可以将Excel文件直接拖放到下方区域")
 	statusLabel.Alignment = fyne.TextAlignCenter
@@ -466,16 +473,20 @@ func guiVersion() {
 				timeStr = fmt.Sprintf("%.2f秒", seconds)
 			}
 
+			// 将结果数组转换为按行展示的格式
+			resultLines := strings.Join(r, "\n")
+
 			// 创建自定义对话框，支持复制文本
-			showCopyableDialog("完成", fmt.Sprintf("✅ 拆分完成！\n\n总耗时: %s\n\n执行结果:\n%s", timeStr, r), myWindow)
+			showCopyableDialog("完成", fmt.Sprintf("✅ 拆分完成！\n\n总耗时: %s\n\n执行结果（已按业务员、店铺名称、日期排序）（总共 %d 条记录）:\n%s", timeStr, len(r), resultLines), myWindow)
 			statusLabel.SetText("处理完成！")
 		}()
 	})
 	runBtn.Importance = widget.HighImportance
 
 	content := container.NewVBox(
-		label,
-		widget.NewSeparator(),
+		// mainLabel,
+		// subLabel,
+		// widget.NewSeparator(),
 		dropArea,
 		widget.NewSeparator(),
 		inputBtn,
@@ -483,7 +494,7 @@ func guiVersion() {
 		widget.NewSeparator(),
 		runBtn,
 		statusLabel,
-		widget.NewLabel("需要处理的excel,需要包含列名：业务员、店铺名称、日期"),
+		widget.NewLabel("💡 待处理的Excel需包含以下列名：业务员、店铺名称、日期"),
 	)
 
 	myWindow.SetContent(content)
