@@ -417,6 +417,11 @@ func guiVersion() {
 	})
 
 	inputBtn := widget.NewButton("选择Excel文件", func() {
+		// 获取当前应用程序所在的文件夹
+		execPath, _ := os.Executable()
+		currentDir := filepath.Dir(execPath)
+
+		// 创建文件选择对话框
 		dialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 			if err != nil || reader == nil {
 				return
@@ -424,11 +429,26 @@ func guiVersion() {
 			inputFile = reader.URI().Path()
 			statusLabel.SetText(fmt.Sprintf("已选择: %s", filepath.Base(inputFile)))
 		}, myWindow)
+
+		// 设置过滤器
 		dialog.SetFilter(storage.NewExtensionFileFilter([]string{".xlsx", ".xls"}))
+
+		// 设置默认打开位置为当前应用所在的文件夹
+		if uri, err := storage.ParseURI("file://" + currentDir); err == nil {
+			if lister, err := storage.ListerForURI(uri); err == nil {
+				dialog.SetLocation(lister)
+			}
+		}
+
 		dialog.Show()
 	})
 
 	outputBtn := widget.NewButton("选择输出文件夹", func() {
+		// 获取当前应用程序所在的文件夹
+		execPath, _ := os.Executable()
+		currentDir := filepath.Dir(execPath)
+
+		// 创建文件夹选择对话框
 		dialog := dialog.NewFolderOpen(func(list fyne.ListableURI, err error) {
 			if err != nil || list == nil {
 				return
@@ -436,6 +456,14 @@ func guiVersion() {
 			outputFolder = list.Path()
 			statusLabel.SetText(fmt.Sprintf("输出到: %s", outputFolder))
 		}, myWindow)
+
+		// 设置默认打开位置为当前应用所在的文件夹
+		if uri, err := storage.ParseURI("file://" + currentDir); err == nil {
+			if lister, err := storage.ListerForURI(uri); err == nil {
+				dialog.SetLocation(lister)
+			}
+		}
+
 		dialog.Show()
 	})
 
