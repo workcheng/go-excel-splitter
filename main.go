@@ -408,7 +408,22 @@ func guiVersion() {
 			// 检查是否是Excel文件
 			if strings.HasSuffix(strings.ToLower(filePath), ".xlsx") || strings.HasSuffix(strings.ToLower(filePath), ".xls") {
 				inputFile = filePath
-				statusLabel.SetText(fmt.Sprintf("已选择: %s", filepath.Base(inputFile)))
+
+				// 自动生成输出文件夹路径：输入文件所在文件夹 + "（拆分）"
+				inputDir := filepath.Dir(inputFile)
+				inputDirName := filepath.Base(inputDir)
+				outputFolder = filepath.Join(inputDir, inputDirName+"（拆分）")
+
+				// 检查文件夹是否存在，如果不存在则创建
+				if _, err := os.Stat(outputFolder); os.IsNotExist(err) {
+					err := os.MkdirAll(outputFolder, 0755)
+					if err != nil {
+						statusLabel.SetText(fmt.Sprintf("错误: 无法创建输出文件夹: %v", err))
+						return
+					}
+				}
+
+				statusLabel.SetText(fmt.Sprintf("已选择: %s\n输出到: %s", filepath.Base(inputFile), outputFolder))
 			} else {
 				// 如果没有找到有效的Excel文件，显示错误
 				dialog.ShowInformation("错误", "请拖放有效的Excel文件（.xlsx或.xls格式）", myWindow)
@@ -428,6 +443,22 @@ func guiVersion() {
 			}
 			inputFile = reader.URI().Path()
 			statusLabel.SetText(fmt.Sprintf("已选择: %s", filepath.Base(inputFile)))
+
+			// 自动生成输出文件夹路径：输入文件所在文件夹 + "（拆分）"
+			inputDir := filepath.Dir(inputFile)
+			inputDirName := filepath.Base(inputDir)
+			outputFolder = filepath.Join(inputDir, inputDirName+"（拆分）")
+
+			// 检查文件夹是否存在，如果不存在则创建
+			if _, err := os.Stat(outputFolder); os.IsNotExist(err) {
+				err := os.MkdirAll(outputFolder, 0755)
+				if err != nil {
+					statusLabel.SetText(fmt.Sprintf("错误: 无法创建输出文件夹: %v", err))
+					return
+				}
+			}
+
+			statusLabel.SetText(fmt.Sprintf("已选择: %s\n输出到: %s", filepath.Base(inputFile), outputFolder))
 		}, myWindow)
 
 		// 设置过滤器
@@ -468,8 +499,8 @@ func guiVersion() {
 	})
 
 	runBtn = widget.NewButton("开始拆分", func() {
-		if inputFile == "" || outputFolder == "" {
-			dialog.ShowInformation("提示", "请先选择Excel文件和输出文件夹", myWindow)
+		if inputFile == "" {
+			dialog.ShowInformation("提示", "请先选择Excel文件", myWindow)
 			return
 		}
 
