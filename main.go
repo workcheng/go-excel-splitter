@@ -465,7 +465,8 @@ func guiVersion() {
 				timeStr = fmt.Sprintf("%.2f秒", seconds)
 			}
 
-			dialog.ShowInformation("完成", fmt.Sprintf("✅ 拆分完成！\n\n总耗时: %s\n\n执行结果:\n%s", timeStr, r), myWindow)
+			// 创建自定义对话框，支持复制文本
+			showCopyableDialog("完成", fmt.Sprintf("✅ 拆分完成！\n\n总耗时: %s\n\n执行结果:\n%s", timeStr, r), myWindow)
 			statusLabel.SetText("处理完成！")
 		}()
 	})
@@ -491,6 +492,37 @@ func guiVersion() {
 
 	// 显示窗口
 	myWindow.ShowAndRun()
+}
+
+// 显示支持复制的自定义对话框
+func showCopyableDialog(title, content string, win fyne.Window) {
+	// 创建自定义的只读但可复制的文本区域
+	// 使用Entry组件但通过监听事件防止编辑
+	textEntry := widget.NewEntry()
+	textEntry.MultiLine = true
+	textEntry.Wrapping = fyne.TextWrapWord
+	textEntry.SetText(content)
+
+	// 监听文本变更事件并恢复原始内容，实现只读效果
+	originalContent := content
+	textEntry.OnChanged = func(s string) {
+		if s != originalContent {
+			textEntry.SetText(originalContent)
+		}
+	}
+
+	// 创建滚动容器
+	scrollContainer := container.NewScroll(textEntry)
+
+	// 创建对话框
+	dialog := dialog.NewCustom(title, "关闭",
+		scrollContainer, win)
+
+	// 设置对话框大小
+	dialog.Resize(fyne.NewSize(500, 300))
+
+	// 显示对话框
+	dialog.Show()
 }
 
 func main() {
