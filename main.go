@@ -536,11 +536,18 @@ func guiVersion() {
 				timeStr = fmt.Sprintf("%.2f秒", seconds)
 			}
 
-			// 将结果数组转换为按行展示的格式
-			resultLines := strings.Join(r, "\n")
+			// 将结果数组转换为按行展示的格式，并添加数字编号
+			var resultLines string
+			for i, line := range r {
+				resultLines += fmt.Sprintf("%d. %s\n", i+1, line)
+			}
+			// 移除最后一个换行符
+			if len(resultLines) > 0 {
+				resultLines = resultLines[:len(resultLines)-1]
+			}
 
 			// 创建自定义对话框，支持复制文本
-			showCopyableDialog("完成", fmt.Sprintf("✅ 拆分完成！\n\n总耗时: %s\n\n执行结果（已按业务员、店铺名称、日期排序）（总共 %d 条记录）:\n%s", timeStr, len(r), resultLines), myWindow)
+			showCopyableDialog("完成", fmt.Sprintf("✅ 拆分完成！\n\n总耗时: %s\n\n执行结果（已按业务员、店铺名称、日期排序）（总共 %d 条记录）:\n\n%s", timeStr, len(r), resultLines), myWindow)
 			statusLabel.SetText("处理完成！")
 		}()
 	})
