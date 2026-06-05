@@ -36,6 +36,7 @@ cd excel-go
 ### 安装依赖
 
 ```bash
+go env -w GOPROXY=https://goproxy.cn,direct
 go mod tidy
 ```
 
