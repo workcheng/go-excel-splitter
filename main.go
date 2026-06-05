@@ -79,6 +79,34 @@ func cleanFilename(name string) string {
 	return strings.TrimSpace(cleaned)
 }
 
+func isExcelFile(filePath string) bool {
+	lowerPath := strings.ToLower(filePath)
+	return strings.HasSuffix(lowerPath, ".xlsx") || strings.HasSuffix(lowerPath, ".xls")
+}
+
+func defaultOutputFolder(inputFile string) string {
+	inputDir := filepath.Dir(inputFile)
+	inputFileName := filepath.Base(inputFile)
+	inputFileNameWithoutExt := strings.TrimSuffix(inputFileName, filepath.Ext(inputFileName))
+	return filepath.Join(inputDir, inputFileNameWithoutExt+"（拆分）")
+}
+
+func defaultSplitColumns(headers []string) []string {
+	preferredColumns := []string{"业务员", "店铺名称", "日期"}
+	headerSet := make(map[string]bool, len(headers))
+	for _, header := range headers {
+		headerSet[header] = true
+	}
+
+	selected := make([]string, 0, len(preferredColumns))
+	for _, column := range preferredColumns {
+		if headerSet[column] {
+			selected = append(selected, column)
+		}
+	}
+	return selected
+}
+
 // 原窗口过程函数指针
 var originalWndProc uintptr
 
@@ -127,18 +155,44 @@ var (
 	myWindow    fyne.Window // 全局窗口变量，用于拖放处理
 )
 
-// generateKey 生成文件名
-func generateKey(row map[string]string) string {
-	// 处理日期
-	dateStr := row["日期"]
-	if t, err := time.Parse("2006-01-02", dateStr); err == nil {
-		dateStr = t.Format("2006-01-02")
+// generateKey 根据选择的列生成文件名
+func generateKey(row map[string]string, splitColumns []string) string {
+	parts := make([]string, 0, len(splitColumns))
+	for _, column := range splitColumns {
+		value := row[column]
+		if column == "日期" {
+			if t, err := time.Parse("2006-01-02", value); err == nil {
+				value = t.Format("2006-01-02")
+			}
+		}
+		parts = append(parts, cleanFilename(value))
 	}
 
-	salesman := cleanFilename(row["业务员"])
-	shop := cleanFilename(row["店铺名称"])
+	return strings.Join(parts, "_")
+}
 
-	return fmt.Sprintf("%s_%s_%s", salesman, shop, dateStr)
+// readExcelHeaders 读取第一个工作表的表头
+func readExcelHeaders(inputFile string) ([]string, error) {
+	f, err := excelize.OpenFile(inputFile)
+	if err != nil {
+		return nil, fmt.Errorf("打开文件失败: %w", err)
+	}
+	defer f.Close()
+
+	sheets := f.GetSheetList()
+	if len(sheets) == 0 {
+		return nil, fmt.Errorf("Excel文件中没有工作表")
+	}
+
+	rows, err := f.GetRows(sheets[0])
+	if err != nil {
+		return nil, fmt.Errorf("读取工作表失败: %w", err)
+	}
+	if len(rows) == 0 || len(rows[0]) == 0 {
+		return nil, fmt.Errorf("表头为空")
+	}
+
+	return rows[0], nil
 }
 
 // SaveTask 保存任务结构
@@ -192,8 +246,11 @@ func saveGroup(task SaveTask) string {
 }
 
 // splitExcelParallel 并行拆分Excel主函数
-func splitExcelParallel(inputFile, outputFolder string, maxWorkers int) ([]string, time.Duration, error) {
+func splitExcelParallel(inputFile, outputFolder string, splitColumns []string, maxWorkers int) ([]string, time.Duration, error) {
 	startTime := time.Now()
+	if len(splitColumns) == 0 {
+		return nil, 0, fmt.Errorf("请至少选择一个分割列")
+	}
 
 	fmt.Printf("📂 读取文件: %s\n", inputFile)
 	fileOpenStart := time.Now()
@@ -233,22 +290,25 @@ func splitExcelParallel(inputFile, outputFolder string, maxWorkers int) ([]strin
 	data := rows[1:]
 	fmt.Printf("📊 表头数量: %d，数据总行数: %d\n", len(headers), len(data))
 
-	// 检查必要列
+	// 检查分割列
 	checkColsStart := time.Now()
-	requiredCols := map[string]int{"业务员": -1, "店铺名称": -1, "日期": -1}
+	splitColIndex := make(map[string]int, len(splitColumns))
+	for _, column := range splitColumns {
+		splitColIndex[column] = -1
+	}
 	for idx, header := range headers {
-		if _, ok := requiredCols[header]; ok {
-			requiredCols[header] = idx
+		if _, ok := splitColIndex[header]; ok {
+			splitColIndex[header] = idx
 		}
 	}
-	for col, idx := range requiredCols {
+	for col, idx := range splitColIndex {
 		if idx == -1 {
-			return nil, 0, fmt.Errorf("缺少必要列: %s", col)
+			return nil, 0, fmt.Errorf("缺少分割列: %s", col)
 		}
 	}
-	fmt.Printf("✅ 必要列检查完成，耗时: %.2f秒\n", time.Since(checkColsStart).Seconds())
+	fmt.Printf("✅ 分割列检查完成，耗时: %.2f秒\n", time.Since(checkColsStart).Seconds())
 
-	// 按文件名分组
+	// 按选择列分组
 	groupingStart := time.Now()
 	groups := make(map[string][][]string)
 	for i, row := range data {
@@ -267,7 +327,10 @@ func splitExcelParallel(inputFile, outputFolder string, maxWorkers int) ([]strin
 			}
 		}
 
-		key := generateKey(rowMap)
+		key := generateKey(rowMap, splitColumns)
+		if key == "" {
+			key = "空值"
+		}
 		groups[key] = append(groups[key], row)
 	}
 	fmt.Printf("✅ 分组完成，耗时: %.2f秒\n", time.Since(groupingStart).Seconds())
@@ -370,9 +433,51 @@ func guiVersion() {
 
 	var outputFolder string
 	var runBtn *widget.Button
+	var selectedSplitColumns []string
 
 	// 重置全局变量
 	inputFile = ""
+
+	columnLabel := widget.NewLabel("请选择Excel文件后选择分割列（可多选）")
+	columnCheckGroup := widget.NewCheckGroup([]string{}, func(selected []string) {
+		selectedSplitColumns = append([]string(nil), selected...)
+	})
+	columnCheckGroup.Disable()
+	columnScroll := container.NewVScroll(columnCheckGroup)
+	columnScroll.SetMinSize(fyne.NewSize(500, 160))
+
+	loadSelectedFile := func(filePath string) {
+		inputFile = filePath
+		outputFolder = defaultOutputFolder(inputFile)
+
+		if _, err := os.Stat(outputFolder); os.IsNotExist(err) {
+			err := os.MkdirAll(outputFolder, 0755)
+			if err != nil {
+				statusLabel.SetText(fmt.Sprintf("错误: 无法创建输出文件夹: %v", err))
+				return
+			}
+		}
+
+		headers, err := readExcelHeaders(inputFile)
+		if err != nil {
+			columnCheckGroup.Options = nil
+			columnCheckGroup.Selected = nil
+			columnCheckGroup.Disable()
+			columnCheckGroup.Refresh()
+			selectedSplitColumns = nil
+			statusLabel.SetText(fmt.Sprintf("读取表头失败: %v", err))
+			dialog.ShowError(err, myWindow)
+			return
+		}
+
+		selectedSplitColumns = defaultSplitColumns(headers)
+		columnCheckGroup.Options = headers
+		columnCheckGroup.Enable()
+		columnCheckGroup.SetSelected(selectedSplitColumns)
+		columnCheckGroup.Refresh()
+		columnLabel.SetText(fmt.Sprintf("选择分割列（可多选，共 %d 列）", len(headers)))
+		statusLabel.SetText(fmt.Sprintf("已选择: %s\n输出到: %s", filepath.Base(inputFile), outputFolder))
+	}
 
 	// 添加一个简单的拖放支持：检查命令行参数
 	// 如果用户拖放文件到可执行文件上，会作为命令行参数传递
@@ -380,9 +485,8 @@ func guiVersion() {
 	if len(os.Args) > 1 {
 		filePath := os.Args[1]
 		// 检查文件是否为Excel文件
-		if strings.HasSuffix(strings.ToLower(filePath), ".xlsx") || strings.HasSuffix(strings.ToLower(filePath), ".xls") {
-			inputFile = filePath
-			statusLabel.SetText(fmt.Sprintf("已选择: %s", filepath.Base(inputFile)))
+		if isExcelFile(filePath) {
+			loadSelectedFile(filePath)
 		}
 	}
 
@@ -406,26 +510,8 @@ func guiVersion() {
 			filePath = strings.ReplaceAll(filePath, "/", "\\")
 
 			// 检查是否是Excel文件
-			if strings.HasSuffix(strings.ToLower(filePath), ".xlsx") || strings.HasSuffix(strings.ToLower(filePath), ".xls") {
-				inputFile = filePath
-
-				// 自动生成输出文件夹路径：输入文件所在文件夹 + 文件名（无扩展名） + "（拆分）"
-				inputDir := filepath.Dir(inputFile)
-				inputFileName := filepath.Base(inputFile)
-				// 移除文件扩展名
-				inputFileNameWithoutExt := strings.TrimSuffix(inputFileName, filepath.Ext(inputFileName))
-				outputFolder = filepath.Join(inputDir, inputFileNameWithoutExt+"（拆分）")
-
-				// 检查文件夹是否存在，如果不存在则创建
-				if _, err := os.Stat(outputFolder); os.IsNotExist(err) {
-					err := os.MkdirAll(outputFolder, 0755)
-					if err != nil {
-						statusLabel.SetText(fmt.Sprintf("错误: 无法创建输出文件夹: %v", err))
-						return
-					}
-				}
-
-				statusLabel.SetText(fmt.Sprintf("已选择: %s\n输出到: %s", filepath.Base(inputFile), outputFolder))
+			if isExcelFile(filePath) {
+				loadSelectedFile(filePath)
 			} else {
 				// 如果没有找到有效的Excel文件，显示错误
 				dialog.ShowInformation("错误", "请拖放有效的Excel文件（.xlsx或.xls格式）", myWindow)
@@ -443,26 +529,7 @@ func guiVersion() {
 			if err != nil || reader == nil {
 				return
 			}
-			inputFile = reader.URI().Path()
-			statusLabel.SetText(fmt.Sprintf("已选择: %s", filepath.Base(inputFile)))
-
-			// 自动生成输出文件夹路径：输入文件所在文件夹 + 文件名（无扩展名） + "（拆分）"
-			inputDir := filepath.Dir(inputFile)
-			inputFileName := filepath.Base(inputFile)
-			// 移除文件扩展名
-			inputFileNameWithoutExt := strings.TrimSuffix(inputFileName, filepath.Ext(inputFileName))
-			outputFolder = filepath.Join(inputDir, inputFileNameWithoutExt+"（拆分）")
-
-			// 检查文件夹是否存在，如果不存在则创建
-			if _, err := os.Stat(outputFolder); os.IsNotExist(err) {
-				err := os.MkdirAll(outputFolder, 0755)
-				if err != nil {
-					statusLabel.SetText(fmt.Sprintf("错误: 无法创建输出文件夹: %v", err))
-					return
-				}
-			}
-
-			statusLabel.SetText(fmt.Sprintf("已选择: %s\n输出到: %s", filepath.Base(inputFile), outputFolder))
+			loadSelectedFile(reader.URI().Path())
 		}, myWindow)
 
 		// 设置过滤器
@@ -507,6 +574,11 @@ func guiVersion() {
 			dialog.ShowInformation("提示", "请先选择Excel文件", myWindow)
 			return
 		}
+		if len(selectedSplitColumns) == 0 {
+			dialog.ShowInformation("提示", "请至少选择一个分割列", myWindow)
+			return
+		}
+		splitColumns := append([]string(nil), selectedSplitColumns...)
 
 		// 禁用按钮
 		runBtn.Disable()
@@ -519,7 +591,7 @@ func guiVersion() {
 				runBtn.Enable()
 			}()
 
-			r, elapsed, err := splitExcelParallel(inputFile, outputFolder, 8)
+			r, elapsed, err := splitExcelParallel(inputFile, outputFolder, splitColumns, 8)
 			if err != nil {
 				dialog.ShowError(err, myWindow)
 				statusLabel.SetText(fmt.Sprintf("错误: %v", err))
@@ -547,7 +619,7 @@ func guiVersion() {
 			}
 
 			// 创建自定义对话框，支持复制文本
-			showCopyableDialog("完成", fmt.Sprintf("✅ 拆分完成！\n\n总耗时: %s\n\n执行结果（已按业务员、店铺名称、日期排序）（总共 %d 条记录）:\n\n%s", timeStr, len(r), resultLines), myWindow)
+			showCopyableDialog("完成", fmt.Sprintf("✅ 拆分完成！\n\n分割列: %s\n总耗时: %s\n\n执行结果（总共 %d 条记录）:\n\n%s", strings.Join(splitColumns, "、"), timeStr, len(r), resultLines), myWindow)
 			statusLabel.SetText("处理完成！")
 		}()
 	})
@@ -562,9 +634,11 @@ func guiVersion() {
 		inputBtn,
 		outputBtn,
 		widget.NewSeparator(),
+		columnLabel,
+		columnScroll,
+		widget.NewSeparator(),
 		runBtn,
 		statusLabel,
-		widget.NewLabel("💡 待处理的Excel需包含以下列名：业务员、店铺名称、日期"),
 	)
 
 	myWindow.SetContent(content)
@@ -634,7 +708,7 @@ func main() {
 			}
 
 			fmt.Println("开始调用splitExcelParallel函数...")
-			_, elapsed, err := splitExcelParallel(inputFile, outputFolder, 0)
+			_, elapsed, err := splitExcelParallel(inputFile, outputFolder, []string{"业务员", "店铺名称", "日期"}, 0)
 			if err != nil {
 				fmt.Printf("错误: %v\n", err)
 				os.Exit(1)

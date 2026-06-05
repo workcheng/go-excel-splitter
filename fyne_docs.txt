@@ -1,0 +1,149 @@
+package fyne // import "fyne.io/fyne/v2"
+
+Package fyne describes the objects and components available to any Fyne app.
+These can all be created, manipulated and tested without rendering (for speed).
+Your main package should use the app package to create an application with a
+default driver that will render your UI.
+
+A simple application may look like this:
+
+    package main
+
+    import "fyne.io/fyne/v2/app"
+    import "fyne.io/fyne/v2/container"
+    import "fyne.io/fyne/v2/widget"
+
+    func main() {
+    	a := app.New()
+    	w := a.NewWindow("Hello")
+
+    	hello := widget.NewLabel("Hello Fyne!")
+    	w.SetContent(container.NewVBox(
+    		hello,
+    		widget.NewButton("Hi!", func() {
+    			hello.SetText("Welcome :)")
+    		}),
+    	))
+
+    	w.ShowAndRun()
+    }
+
+const AnimationRepeatForever = -1
+const KeyModifierShortcutDefault = KeyModifierControl
+var AnimationEaseInOut = animationEaseInOut ...
+func Do(fn func())
+func DoAndWait(fn func())
+func IsHorizontal(orient DeviceOrientation) bool
+func IsVertical(orient DeviceOrientation) bool
+func LogError(reason string, err error)
+func Max(x, y float32) float32
+func Min(x, y float32) float32
+func SetCurrentApp(current App)
+type Animation struct{ ... }
+    func NewAnimation(d time.Duration, fn func(float32)) *Animation
+type AnimationCurve func(float32) float32
+type App interface{ ... }
+    func CurrentApp() App
+type AppMetadata struct{ ... }
+type BuildType int
+    const BuildStandard BuildType = iota ...
+type Canvas interface{ ... }
+type CanvasObject interface{ ... }
+type Clipboard interface{ ... }
+type CloudProvider interface{ ... }
+type CloudProviderPreferences interface{ ... }
+type CloudProviderStorage interface{ ... }
+type Container struct{ ... }
+    func NewContainer(objects ...CanvasObject) *Container
+    func NewContainerWithLayout(layout Layout, objects ...CanvasObject) *Container
+    func NewContainerWithoutLayout(objects ...CanvasObject) *Container
+type Delta struct{ ... }
+    func NewDelta(dx float32, dy float32) Delta
+type Device interface{ ... }
+    func CurrentDevice() Device
+type DeviceOrientation int
+    const OrientationVertical DeviceOrientation = iota ...
+type Disableable interface{ ... }
+type DoubleTappable interface{ ... }
+type DragEvent struct{ ... }
+type Draggable interface{ ... }
+type Driver interface{ ... }
+type Focusable interface{ ... }
+type HardwareKey struct{ ... }
+type KeyEvent struct{ ... }
+type KeyModifier int
+    const KeyModifierShift KeyModifier = 1 << iota ...
+type KeyName string
+    const KeyEscape KeyName = "Escape" ...
+type KeyboardShortcut interface{ ... }
+type Layout interface{ ... }
+type LegacyTheme interface{ ... }
+type Lifecycle interface{ ... }
+type ListableURI interface{ ... }
+type Locale string
+type MainMenu struct{ ... }
+    func NewMainMenu(items ...*Menu) *MainMenu
+type Menu struct{ ... }
+    func NewMenu(label string, items ...*MenuItem) *Menu
+type MenuItem struct{ ... }
+    func NewMenuItem(label string, action func()) *MenuItem
+    func NewMenuItemSeparator() *MenuItem
+    func NewMenuItemWithIcon(label string, icon Resource, action func()) *MenuItem
+type Notification struct{ ... }
+    func NewNotification(title, content string) *Notification
+type OverlayStack interface{ ... }
+type PointEvent struct{ ... }
+type Position struct{ ... }
+    func NewPos(x float32, y float32) Position
+    func NewSquareOffsetPos(length float32) Position
+type Preferences interface{ ... }
+type Resource interface{ ... }
+    func LoadResourceFromPath(path string) (Resource, error)
+    func LoadResourceFromURLString(urlStr string) (Resource, error)
+type ScrollDirection int
+    const ScrollBoth ScrollDirection = iota ...
+type ScrollEvent struct{ ... }
+type Scrollable interface{ ... }
+type SecondaryTappable interface{ ... }
+type Settings interface{ ... }
+type Shortcut interface{ ... }
+type ShortcutCopy struct{ ... }
+type ShortcutCut struct{ ... }
+type ShortcutHandler struct{ ... }
+type ShortcutPaste struct{ ... }
+type ShortcutRedo struct{}
+type ShortcutSelectAll struct{}
+type ShortcutUndo struct{}
+type Shortcutable interface{ ... }
+type Size struct{ ... }
+    func MeasureText(text string, size float32, style TextStyle) Size
+    func NewSize(w float32, h float32) Size
+    func NewSquareSize(side float32) Size
+type StaticResource struct{ ... }
+    func NewStaticResource(name string, content []byte) *StaticResource
+type Storage interface{ ... }
+type StringValidator func(string) error
+type Tabbable interface{ ... }
+type Tappable interface{ ... }
+type TextAlign int
+    const TextAlignLeading TextAlign = iota ...
+type TextStyle struct{ ... }
+type TextTruncation int
+    const TextTruncateOff TextTruncation = iota ...
+type TextWrap int
+    const TextWrapOff TextWrap = iota ...
+type Theme interface{ ... }
+type ThemeColorName string
+type ThemeIconName string
+type ThemeSizeName string
+type ThemeVariant uint
+type ThemedResource interface{ ... }
+type URI interface{ ... }
+type URIReadCloser interface{ ... }
+type URIWithIcon interface{ ... }
+type URIWriteCloser interface{ ... }
+type Validatable interface{ ... }
+type Vector2 interface{ ... }
+type Widget interface{ ... }
+type WidgetRenderer interface{ ... }
+type Window interface{ ... }
