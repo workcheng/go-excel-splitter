@@ -31,3 +31,6 @@ output_folder/
 excel-go（拆分）/
 input（拆分）/
 input（拆分）1/
+.gocache/
+.gotmp/
+input（拆分）2/
