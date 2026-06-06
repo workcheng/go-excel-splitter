@@ -21,6 +21,8 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
+var appIcon = fyne.NewStaticResource("Icon.png", appIconBytes)
+
 // Windows API声明
 var (
 	user32               = syscall.NewLazyDLL("user32.dll")
@@ -414,8 +416,10 @@ func splitExcelParallel(inputFile, outputFolder string, splitColumns []string, m
 // guiVersion GUI版本
 func guiVersion() {
 	myApp := app.New()
+	myApp.SetIcon(appIcon)
 	myWindow = myApp.NewWindow("Excel闪电拆分工具") // 赋值给全局变量
 	// 设置窗口大小为更适合一般应用的尺寸
+	myWindow.SetIcon(appIcon)
 	myWindow.Resize(fyne.NewSize(800, 600))
 
 	// 使用两个Label组件分别显示主标题和副标题
