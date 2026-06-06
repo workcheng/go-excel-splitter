@@ -48,7 +48,8 @@ go build
 go run main.go input.xlsx output_folder
 
 # 编译GUI版本（Windows）
-go build -ldflags="-s -w -H windowsgui" -o Excel闪电拆分工具.exe main.go
+# go build -ldflags="-s -w -H windowsgui" -o Excel闪电拆分工具.exe main.go
+go build -ldflags="-s -w -H windowsgui" -o Excel闪电拆分工具v2.1.exe .
 # 编译命令行版本
 go build -o excel-splitter main.go                                          
 ```
