@@ -8,9 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
-	"unsafe"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -22,52 +20,6 @@ import (
 )
 
 var appIcon = fyne.NewStaticResource("Icon.png", appIconBytes)
-
-// Windows API声明
-var (
-	user32               = syscall.NewLazyDLL("user32.dll")
-	procEnumWindows      = user32.NewProc("EnumWindows")
-	procGetWindowTextW   = user32.NewProc("GetWindowTextW")
-	procDragAcceptFiles  = user32.NewProc("DragAcceptFiles") // 只有一个版本
-	procDragQueryFile    = user32.NewProc("DragQueryFileW")  // 有Unicode版本
-	procDragFinish       = user32.NewProc("DragFinish")      // 只有一个版本
-	procSetWindowLongPtr = user32.NewProc("SetWindowLongPtrW")
-	procGetWindowLongPtr = user32.NewProc("GetWindowLongPtrW")
-	procCallWindowProc   = user32.NewProc("CallWindowProcW")
-
-	// 消息常量
-	WM_DROPFILES = uint32(0x0233)
-	GWLP_WNDPROC uintptr
-)
-
-// 找到的窗口句柄
-var foundHWND syscall.Handle
-
-// EnumWindows回调函数
-var enumWindowsCallback = syscall.NewCallback(func(hwnd syscall.Handle, lparam uintptr) uintptr {
-	// 获取窗口标题
-	buf := make([]uint16, 1024)
-	r1, _, _ := procGetWindowTextW.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
-
-	if r1 > 0 {
-		windowTitle := syscall.UTF16ToString(buf[:r1])
-		// 检查窗口标题是否包含我们的应用名称
-		if strings.Contains(windowTitle, "Excel闪电拆分工具") {
-			foundHWND = hwnd
-			fmt.Printf("找到窗口: %s, 句柄: %x\n", windowTitle, hwnd)
-			return 0 // 停止枚举
-		}
-	}
-
-	return 1 // 继续枚举
-})
-
-func init() {
-	// 初始化窗口过程常量
-	// 在32位和64位系统上，-4的uintptr表示方式不同
-	var temp int32 = -4
-	GWLP_WNDPROC = uintptr(temp)
-}
 
 // FileCleaner 清理非法文件名字符
 var fileCleaner = regexp.MustCompile(`[\\/:*?"<>|]`)
@@ -109,46 +61,6 @@ func defaultSplitColumns(headers []string) []string {
 	return selected
 }
 
-// 原窗口过程函数指针
-var originalWndProc uintptr
-
-// 窗口过程回调函数
-var wndProcCallback = syscall.NewCallback(func(hwnd syscall.Handle, msg uint32, wparam uintptr, lparam uintptr) uintptr {
-	if msg == WM_DROPFILES {
-		// 处理拖放文件
-		var fileCount uint32
-
-		// 获取文件数量
-		r1, _, _ := procDragQueryFile.Call(wparam, uintptr(^uint32(0)), 0, 0)
-		fileCount = uint32(r1)
-
-		if fileCount > 0 {
-			// 只处理第一个文件
-			buf := make([]uint16, 1024)
-			r1, _, _ := procDragQueryFile.Call(wparam, 0, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
-			if r1 > 0 {
-				filePath := syscall.UTF16ToString(buf[:r1])
-				// 检查是否为Excel文件
-				if strings.HasSuffix(strings.ToLower(filePath), ".xlsx") || strings.HasSuffix(strings.ToLower(filePath), ".xls") {
-					// 更新全局输入文件变量
-					inputFile = filePath
-					// 更新状态标签
-					statusLabel.SetText(fmt.Sprintf("已选择: %s", filepath.Base(filePath)))
-				}
-			}
-		}
-
-		// 完成拖放处理
-		procDragFinish.Call(wparam)
-		return 0
-	}
-
-	// 调用原窗口过程
-	ret, _, _ := procCallWindowProc.Call(originalWndProc, uintptr(hwnd), uintptr(msg), wparam, lparam)
-	return ret
-})
-
-// 全局变量用于窗口过程访问
 // 全局变量
 var (
 	inputFile   string
@@ -510,8 +422,7 @@ func guiVersion() {
 			fileURI := uris[0]
 			filePath := fileURI.Path()
 
-			// 处理Windows路径格式
-			filePath = strings.ReplaceAll(filePath, "/", "\\")
+			filePath = filepath.FromSlash(filePath)
 
 			// 检查是否是Excel文件
 			if isExcelFile(filePath) {
