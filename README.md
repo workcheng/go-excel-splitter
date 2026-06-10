@@ -1,120 +1,110 @@
-# Excel拆分工具
+# Excel 拆分工具
 
-这是一个使用Go语言和Fyne框架开发的图形界面工具，用于将Excel文件（.xlsx或.xls）按照表头拆分多个Excel文件。
+一个使用 Go、Fyne 和 excelize 开发的桌面工具，用于读取 Excel 文件，并按选中的表头列把数据拆分成多个 `.xlsx` 文件。
 
-## 功能特性
+## 功能
 
-- 📁 **文件选择**：支持通过拖放或按钮选择Excel文件
-- 📊 **工作表选择**：可以选择要转换的特定工作表
-- 🔄 **多种转换格式**：
-- 💾 **输出设置**：可自定义输出文件路径和名称
-- 🎯 **实时预览**：显示当前选择的文件和拆分状态
+- 支持选择或拖放 `.xlsx`、`.xls` 文件。
+- 自动读取第一个工作表表头。
+- 支持选择一个或多个分割列。
+- 默认输出到源文件同级的 `文件名（拆分）` 文件夹。
+- 按分组并行保存拆分后的 Excel 文件。
 
 ## 技术栈
 
-- **Go语言**：主要开发语言
-- **Fyne框架**：用于构建跨平台GUI界面
-- **excelize**：用于读取Excel文件内容
-
-## 安装方法
-
-### 前提条件
-
-- 安装Go 1.19或更高版本
-- 确保系统已安装Git
-
-### 克隆项目
-
-```bash
-git clone <repository-url>
-cd excel-go
-```
-
-### 安装依赖
-
-```bash
-go env -w GOPROXY=https://goproxy.cn,direct
-go mod tidy
-```
-
-### 构建应用
-
-```bash
-go build
-# 命令行模式
-go run main.go input.xlsx output_folder
-
-# 编译GUI版本（Windows）
-# go build -ldflags="-s -w -H windowsgui" -o Excel闪电拆分工具.exe main.go
-go build -ldflags="-s -w -H windowsgui" -o Excel闪电拆分工具v2.1.exe .
-# 编译命令行版本
-go build -o excel-splitter main.go                                          
-```
-
-### 运行应用
-
-```bash
-./excel-go
-```
-
-## 使用说明
-
-1. **选择Excel文件**：
-   - 直接将Excel文件拖放到应用窗口
-   - 或点击"选择文件"按钮浏览并选择文件
-
-2. **选择工作表**：
-   - 文件选择成功后，从下拉列表中选择要转换的工作表
-
-3. **选择拆分列**：
-   - 选择适合的列进行拆分
-
-4. **选择输出路径**：
-   - 点击"选择输出路径"按钮设置拆分后的Excel文件的保存位置
-
-5. **开始拆分**：
-   - 点击"拆分"按钮开始拆分过程
-   - 转换完成后，会显示成功提示
+- Go 1.25
+- Fyne v2
+- excelize v2
 
 ## 项目结构
 
+```text
+.
+├── .github/workflows/     # GitHub CI 和 Release 工作流
+├── app_icon.go            # 图标资源字节数据
+├── FyneApp.toml           # Fyne 应用元信息
+├── Icon.ico               # Windows 图标
+├── Icon.png               # 应用图标
+├── main.go                # GUI、Excel 读取和拆分逻辑
+├── go.mod                 # Go 模块定义
+├── go.sum                 # Go 依赖锁定
+└── README.md              # 项目说明
 ```
-excel-go/
-├── main.go           # 主程序代码
-├── go.mod            # Go模块依赖
-├── go.sum            # 依赖版本锁定
-├── .gitignore        # Git忽略文件
-└── README.md         # 项目说明文档
+
+## 本地开发
+
+安装 Go 后，先下载依赖：
+
+```bash
+go mod download
 ```
+
+运行测试：
+
+```bash
+go test ./...
+```
+
+启动应用：
+
+```bash
+go run .
+```
+
+构建当前平台版本：
+
+```bash
+go build -trimpath -ldflags="-s -w" -o excel-splitter .
+```
+
+Windows GUI 版本可使用：
+
+```bash
+go build -trimpath -ldflags="-s -w -H=windowsgui" -o excel-splitter.exe .
+```
+
+Linux 构建 Fyne 应用时需要系统 GUI 依赖，Ubuntu 可安装：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev
+```
+
+## 使用方式
+
+1. 启动应用。
+2. 点击“选择 Excel 文件”，或把 Excel 文件拖放到窗口中。
+3. 选择需要作为拆分依据的列。
+4. 选择输出文件夹，或使用默认输出文件夹。
+5. 点击“开始拆分”。
+
+## GitHub Actions
+
+仓库包含两个工作流：
+
+- `CI`：任意分支 push 或提交 Pull Request 时，在 Linux、macOS、Windows 上执行 `go test ./...`。
+- `Release`：推送 `v*` 格式的 tag 时，在 Linux、macOS、Windows 上构建版本，并创建 GitHub Release。
+
+发布新版本示例：
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Release 产物：
+
+- `excel-splitter-linux.tar.gz`
+- `excel-splitter-macos.tar.gz`
+- `excel-splitter-windows.zip`
 
 ## 注意事项
 
-1. 支持的Excel格式：.xlsx和.xls
-2. 拆分过程中请勿关闭应用窗口
-3. 拆分后的文件编码为UTF-8
-4. 大文件转换可能需要较长时间
-
-## 常见问题
-
-### 无法打开应用
-- 确保已正确安装Go和所有依赖
-- 检查系统是否支持Fyne框架（Windows、macOS、Linux均支持）
-
-### 拆分失败
-- 检查Excel文件是否损坏
-- 确保有足够的权限读写文件
-- 尝试关闭其他可能正在使用该Excel文件的程序
+- 当前拆分逻辑读取第一个工作表。
+- 分割列为空时不会执行拆分。
+- 输出文件名会自动替换 Windows 文件名中的非法字符。
+- 大文件拆分耗时取决于数据量、磁盘速度和分组数量。
 
 ## 许可证
 
-[MIT License](LICENSE)
-
-## 贡献
-
-欢迎提交Issue和Pull Request！
-
-## 联系方式
-
-如有问题或建议，请通过以下方式联系：
-- 项目地址：[<repository-url>](https://github.com/workcheng/go-excel-splitter)
-- 开发者：[Andy]
+MIT License
