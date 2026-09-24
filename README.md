@@ -9,6 +9,7 @@
 - 支持选择一个或多个分割列。
 - 默认输出到源文件同级的 `文件名（拆分）` 文件夹。
 - 按分组并行保存拆分后的 Excel 文件。
+- 自动检查更新：启动时每天最多检查一次 GitHub Release，下载后校验 SHA256 再替换；新版本启动失败会自动回退。
 
 ## 技术栈
 
@@ -78,6 +79,10 @@ sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev
 4. 选择输出文件夹，或使用默认输出文件夹。
 5. 点击“开始拆分”。
 
+窗口底部可以查看当前版本、手动“检查更新”和“打赏作者”。命令行下可用 `excel-splitter --version` 查看版本，`excel-splitter --update` 检查并安装更新。
+
+更新状态和日志保存在用户配置目录的 `excel-splitter/` 下（Windows 为 `%AppData%\excel-splitter\`）。在 `update-state.json` 中设置 `"disable_auto_check": true` 可关闭自动检查，设置 `"mirror"` 可指定下载镜像前缀。
+
 ## GitHub Actions
 
 仓库包含两个工作流：
@@ -97,6 +102,9 @@ Release 产物：
 - `excel-splitter-linux.tar.gz`
 - `excel-splitter-macos.tar.gz`
 - `excel-splitter-windows.zip`
+- `checksums.txt`（自动更新用于校验下载内容）
+
+构建时通过 `-ldflags "-X main.version=<tag>"` 注入版本号，本地构建默认为 `dev`，不会检查更新。
 
 ## 注意事项
 

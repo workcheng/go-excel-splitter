@@ -15,6 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # 资源名称是自动更新的契约（见 updater.go 的 platformAssets），改名会让旧版本找不到更新
         include:
           - os: ubuntu-latest
             binary_name: excel-splitter-linux
@@ -50,7 +51,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          go build -trimpath -ldflags="-s -w" -o "dist/${{ matrix.binary_name }}" .
+          go build -trimpath -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o "dist/${{ matrix.binary_name }}" .
           chmod +x "dist/${{ matrix.binary_name }}"
           tar -czf "dist/${{ matrix.asset_name }}" -C dist "${{ matrix.binary_name }}"
 
@@ -59,7 +60,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          go build -trimpath -ldflags="-s -w -H=windowsgui" -o "dist/${{ matrix.binary_name }}" .
+          go build -trimpath -ldflags="-s -w -H=windowsgui -X main.version=${{ github.ref_name }}" -o "dist/${{ matrix.binary_name }}" .
           Compress-Archive -Path "dist/${{ matrix.binary_name }}" -DestinationPath "dist/${{ matrix.asset_name }}" -Force
 
       - name: Upload artifact
@@ -79,6 +80,10 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: artifacts
+        run: sha256sum * > checksums.txt && cat checksums.txt
 
       - name: Create release
         env:

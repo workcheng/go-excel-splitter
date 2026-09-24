@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
 	"github.com/xuri/excelize/v2"
@@ -327,9 +328,13 @@ func splitExcelParallel(inputFile, outputFolder string, splitColumns []string, m
 
 // guiVersion GUI版本
 func guiVersion() {
+	if !prepareUpdateOnLaunch() {
+		return // 新版本启动失败，已回滚并重启旧版本
+	}
+
 	myApp := app.New()
 	myApp.SetIcon(appIcon)
-	myWindow = myApp.NewWindow("Excel闪电拆分工具") // 赋值给全局变量
+	myWindow = myApp.NewWindow("Excel闪电拆分工具 " + version) // 赋值给全局变量
 	// 设置窗口大小为更适合一般应用的尺寸
 	myWindow.SetIcon(appIcon)
 	myWindow.Resize(fyne.NewSize(800, 600))
@@ -497,12 +502,14 @@ func guiVersion() {
 
 		// 禁用按钮
 		runBtn.Disable()
+		splitting.Store(true)
 
 		statusLabel.SetText("处理中...")
 
 		// 在goroutine中执行
 		go func() {
 			defer func() {
+				splitting.Store(false)
 				runBtn.Enable()
 			}()
 
@@ -540,6 +547,14 @@ func guiVersion() {
 	})
 	runBtn.Importance = widget.HighImportance
 
+	checkUpdateBtn := widget.NewButton("检查更新", func() {
+		checkForUpdates(myApp, myWindow, true)
+	})
+	donateBtn := widget.NewButton("打赏作者", func() {
+		showDonateDialog(myWindow)
+	})
+	versionBar := container.NewHBox(widget.NewLabel("版本 "+version), layout.NewSpacer(), donateBtn, checkUpdateBtn)
+
 	content := container.NewVBox(
 		// mainLabel,
 		// subLabel,
@@ -554,12 +569,18 @@ func guiVersion() {
 		widget.NewSeparator(),
 		runBtn,
 		statusLabel,
+		widget.NewSeparator(),
+		versionBar,
 	)
 
 	myWindow.SetContent(content)
 
 	// 注意：Windows API拖放功能已移除，
 	// 当前版本使用命令行参数处理拖放文件（当用户将文件拖放到可执行文件上时）
+
+	myApp.Lifecycle().SetOnStarted(func() {
+		startUpdateTasks(myApp, myWindow)
+	})
 
 	// 显示窗口
 	myWindow.ShowAndRun()
@@ -597,11 +618,22 @@ func showCopyableDialog(title, content string, win fyne.Window) {
 }
 
 func main() {
-	fmt.Println("Excel闪电拆分工具 v1.0")
+	fmt.Printf("Excel闪电拆分工具 %s\n", version)
 	fmt.Println("使用方法: excel-splitter <输入文件> [输出文件夹]")
+	fmt.Println("         excel-splitter --update   检查并安装更新")
+	fmt.Println("         excel-splitter --version  显示版本")
 	fmt.Printf("命令行参数数量: %d\n", len(os.Args))
 	for i, arg := range os.Args {
 		fmt.Printf("参数 %d: %s\n", i, arg)
+	}
+
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "--version":
+			return
+		case "--update":
+			os.Exit(runCLIUpdate())
+		}
 	}
 
 	// 命令行模式

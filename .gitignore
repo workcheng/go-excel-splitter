@@ -9,7 +9,6 @@
 # go.sum
 
 # 测试文件
-*_test.go
 *.test
 
 # 临时文件
