@@ -4,8 +4,11 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 )
 
@@ -214,5 +217,29 @@ func TestCheckPendingUpdateRollsBack(t *testing.T) {
 	// 回到旧版本后正常启动，清理失败的版本
 	if rolledBack, _ := checkPendingUpdate(statePath, exe); rolledBack || exists(exe+".bad") {
 		t.Fatal("回滚后再次启动应清理 .bad")
+	}
+}
+
+func TestDoWithRetry(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			// 模拟连接被断开（客户端收到 EOF）
+			conn, _, _ := w.(http.Hijacker).Hijack()
+			conn.Close()
+			return
+		}
+		w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	resp, err := doWithRetry(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if calls.Load() != 2 {
+		t.Fatalf("应重试一次，实际请求 %d 次", calls.Load())
 	}
 }

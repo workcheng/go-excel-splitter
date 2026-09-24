@@ -119,6 +119,30 @@ func newRequest(ctx context.Context, url string) (*http.Request, error) {
 	return req, nil
 }
 
+// doWithRetry 发送 GET 请求，连接失败（国内访问 GitHub 常见的 EOF、超时）时最多重试 3 次。
+// 只在拿到响应之前重试，已开始读取的下载不会重来。
+func doWithRetry(req *http.Request) (*http.Response, error) {
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-req.Context().Done():
+				return nil, req.Context().Err()
+			case <-time.After(time.Duration(attempt) * time.Second):
+			}
+		}
+		resp, err := updateHTTPClient.Do(req)
+		if err == nil {
+			return resp, nil
+		}
+		if req.Context().Err() != nil {
+			return nil, err
+		}
+		lastErr = err
+	}
+	return nil, lastErr
+}
+
 // checkLatest 查询 GitHub 最新正式版本，没有更新时返回 nil, nil
 func checkLatest(ctx context.Context, current string) (*releaseInfo, error) {
 	req, err := newRequest(ctx, latestReleaseAPI)
@@ -127,7 +151,7 @@ func checkLatest(ctx context.Context, current string) (*releaseInfo, error) {
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 
-	resp, err := updateHTTPClient.Do(req)
+	resp, err := doWithRetry(req)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +211,7 @@ func fetchText(ctx context.Context, url string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	resp, err := updateHTTPClient.Do(req)
+	resp, err := doWithRetry(req)
 	if err != nil {
 		return "", err
 	}
@@ -232,7 +256,7 @@ func downloadUpdate(ctx context.Context, rel *releaseInfo, exe, mirror string, o
 	if err != nil {
 		return "", err
 	}
-	resp, err := updateHTTPClient.Do(req)
+	resp, err := doWithRetry(req)
 	if err != nil {
 		return "", fmt.Errorf("下载更新失败: %w", err)
 	}
