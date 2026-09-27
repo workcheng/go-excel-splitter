@@ -26,9 +26,9 @@ jobs:
             "Authorization: Basic $(printf '12581:%s' "$GITEE_TOKEN" | base64 -w0)"
           git -c http.version=HTTP/1.1 push --force \
             https://gitee.com/12581/go-excel-splitter.git \
-            +refs/heads/dev:refs/heads/dev \
-            +refs/tags/v1.0.3:refs/tags/v1.0.3 \
-            +refs/tags/v1.0.4:refs/tags/v1.0.4 \
-            +refs/tags/v1.0.5:refs/tags/v1.0.5 \
-            +refs/tags/v1.0.6:refs/tags/v1.0.6 \
-            +refs/tags/v1.0.8:refs/tags/v1.0.8
+            +refs/remotes/origin/dev:refs/heads/dev
+          for tag in v1.0.3 v1.0.4 v1.0.5 v1.0.6 v1.0.8; do
+            git -c http.version=HTTP/1.1 push --force \
+              https://gitee.com/12581/go-excel-splitter.git \
+              "+refs/tags/$tag:refs/tags/$tag"
+          done
