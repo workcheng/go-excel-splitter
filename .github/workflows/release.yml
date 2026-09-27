@@ -156,7 +156,30 @@ jobs:
             if jq -e --arg name "$filename" 'any(.[]; .name == $name)' <<< "$existing_files" >/dev/null; then
               continue
             fi
-            curl -fsS -X POST "$api/releases/$release_id/attach_files" \
-              -F "access_token=$GITEE_TOKEN" \
-              -F "file=@$asset" >/dev/null
+            uploaded=false
+            for attempt in 1 2 3 4; do
+              if curl --http1.1 -fsS --connect-timeout 30 --max-time 180 \
+                -X POST "$api/releases/$release_id/attach_files?access_token=$GITEE_TOKEN" \
+                -F "file=@$asset" >/dev/null; then
+                uploaded=true
+                break
+              fi
+              release_json="$(curl -fsS --get \
+                --data-urlencode "access_token=$GITEE_TOKEN" \
+                "$api/releases/$release_id")"
+              existing_files="$(jq -c '.assets // []' <<< "$release_json")"
+              if jq -e --arg name "$filename" 'any(.[]; .name == $name)' <<< "$existing_files" >/dev/null; then
+                uploaded=true
+                break
+              fi
+              sleep 2
+            done
+            if [[ "$uploaded" != true ]]; then
+              echo "Failed to upload Gitee release asset: $filename" >&2
+              exit 1
+            fi
+            release_json="$(curl -fsS --get \
+              --data-urlencode "access_token=$GITEE_TOKEN" \
+              "$api/releases/$release_id")"
+            existing_files="$(jq -c '.assets // []' <<< "$release_json")"
           done
