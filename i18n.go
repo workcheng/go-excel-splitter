@@ -38,6 +38,7 @@ var englishText = map[string]string{
 	"检查更新":                   "Check for updates",
 	"打赏作者":                   "Support the author",
 	"设置":                     "Settings",
+	"退出":                     "Quit",
 	"语言":                     "Language",
 	"关闭":                     "Close",
 	"简体中文":                   "简体中文",
@@ -212,10 +213,14 @@ func showSettingsDialog(a fyne.App, w fyne.Window) {
 }
 
 func settingsMenu(a fyne.App, w fyne.Window) *fyne.MainMenu {
+	quitItem := fyne.NewMenuItem(tr("退出"), a.Quit)
+	quitItem.IsQuit = true
 	return fyne.NewMainMenu(fyne.NewMenu(tr("设置"),
 		fyne.NewMenuItem(tr("语言"), func() { showSettingsDialog(a, w) }),
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem(tr("打赏作者"), func() { showDonateDialog(w) }),
 		fyne.NewMenuItem(tr("检查更新"), func() { checkForUpdates(a, w, true) }),
+		fyne.NewMenuItemSeparator(),
+		quitItem,
 	))
 }
