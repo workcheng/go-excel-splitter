@@ -1,0 +1,34 @@
+name: Purge Gitee history
+
+on:
+  push:
+    tags:
+      - "purge-history-*"
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout all refs
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Force-push sanitized refs to Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config http.https://gitee.com/.extraheader \
+            "Authorization: Basic $(printf '12581:%s' "$GITEE_TOKEN" | base64 -w0)"
+          git -c http.version=HTTP/1.1 push --force \
+            https://gitee.com/12581/go-excel-splitter.git \
+            +refs/heads/dev:refs/heads/dev \
+            +refs/tags/v1.0.3:refs/tags/v1.0.3 \
+            +refs/tags/v1.0.4:refs/tags/v1.0.4 \
+            +refs/tags/v1.0.5:refs/tags/v1.0.5 \
+            +refs/tags/v1.0.6:refs/tags/v1.0.6 \
+            +refs/tags/v1.0.8:refs/tags/v1.0.8
