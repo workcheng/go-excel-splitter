@@ -103,7 +103,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Push tag to Gitee
+      - name: Push release tag to Gitee
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
@@ -111,9 +111,15 @@ jobs:
           git fetch origin dev
           git config http.https://gitee.com/.extraheader \
             "Authorization: Basic $(printf '12581:%s' "$GITEE_TOKEN" | base64 -w0)"
-          git push https://gitee.com/12581/go-excel-splitter.git \
-            refs/remotes/origin/dev:refs/heads/dev \
-            "refs/tags/$TAG_NAME:refs/tags/$TAG_NAME"
+          for attempt in 1 2 3; do
+            if timeout 90s git -c http.version=HTTP/1.1 push \
+              https://gitee.com/12581/go-excel-splitter.git \
+              "refs/tags/$TAG_NAME:refs/tags/$TAG_NAME"; then
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
 
       - name: Download release assets
         uses: actions/download-artifact@v4
@@ -184,3 +190,16 @@ jobs:
               "$api/releases/$release_id")"
             existing_files="$(jq -c '.assets // []' <<< "$release_json")"
           done
+
+      - name: Sync dev branch to Gitee
+        continue-on-error: true
+        run: |
+          for attempt in 1 2 3; do
+            if timeout 90s git -c http.version=HTTP/1.1 push \
+              https://gitee.com/12581/go-excel-splitter.git \
+              refs/remotes/origin/dev:refs/heads/dev; then
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
