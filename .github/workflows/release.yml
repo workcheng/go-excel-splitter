@@ -158,7 +158,7 @@ jobs:
             fi
             uploaded=false
             for attempt in 1 2 3 4; do
-              if curl --http1.1 -fsS --connect-timeout 30 --max-time 180 \
+              if curl --http1.1 -fsS -H 'Expect:' --connect-timeout 30 --max-time 180 \
                 -X POST "$api/releases/$release_id/attach_files?access_token=$GITEE_TOKEN" \
                 -F "file=@$asset" >/dev/null; then
                 uploaded=true
