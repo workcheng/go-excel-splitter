@@ -185,10 +185,22 @@ jobs:
               echo "Failed to upload Gitee release asset: $filename" >&2
               exit 1
             fi
-            release_json="$(curl -fsS --get \
-              --data-urlencode "access_token=$GITEE_TOKEN" \
-              "$api/releases/$release_id")"
-            existing_files="$(jq -c '.assets // []' <<< "$release_json")"
+            visible=false
+            for verify_attempt in $(seq 1 12); do
+              release_json="$(curl -fsS --get \
+                --data-urlencode "access_token=$GITEE_TOKEN" \
+                "$api/releases/$release_id")"
+              existing_files="$(jq -c '.assets // []' <<< "$release_json")"
+              if jq -e --arg name "$filename" 'any(.[]; .name == $name)' <<< "$existing_files" >/dev/null; then
+                visible=true
+                break
+              fi
+              sleep 5
+            done
+            if [[ "$visible" != true ]]; then
+              echo "Gitee release asset did not become visible: $filename" >&2
+              exit 1
+            fi
           done
 
           for asset in artifacts/*; do
