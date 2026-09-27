@@ -4,6 +4,8 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -34,7 +36,7 @@ func TestIsNewer(t *testing.T) {
 }
 
 func TestBuildReleaseInfo(t *testing.T) {
-	gr := githubRelease{TagName: "v1.2.0", HTMLURL: "https://example/r"}
+	gr := releaseResponse{TagName: "v1.2.0", HTMLURL: "https://example/r"}
 	gr.Assets = append(gr.Assets,
 		struct {
 			Name string `json:"name"`
@@ -241,5 +243,72 @@ func TestDoWithRetry(t *testing.T) {
 	resp.Body.Close()
 	if calls.Load() != 2 {
 		t.Fatalf("应重试一次，实际请求 %d 次", calls.Load())
+	}
+}
+
+func TestCheckLatestFallsBackToSecondSource(t *testing.T) {
+	var fallbackCalls atomic.Int32
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer primary.Close()
+	fallback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fallbackCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"tag_name":"v1.1.0","html_url":"https://example/release","assets":[{"name":"excel-splitter-windows.zip","browser_download_url":"https://example/app.zip"},{"name":"checksums.txt","browser_download_url":"https://example/checksums.txt"}]}`))
+	}))
+	defer fallback.Close()
+
+	rel, err := checkLatestFrom(context.Background(), "v1.0.0", []string{primary.URL, fallback.URL}, "windows", "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel == nil || rel.Source != "github" || rel.Version != "v1.1.0" || rel.AssetURL != "https://example/app.zip" || rel.ChecksumURL != "https://example/checksums.txt" {
+		t.Fatalf("unexpected release from fallback: %+v", rel)
+	}
+	if fallbackCalls.Load() != 1 {
+		t.Fatalf("fallback called %d times, want 1", fallbackCalls.Load())
+	}
+}
+
+func TestCheckLatestUsesNewerReleaseAcrossSources(t *testing.T) {
+	releaseServer := func(tag string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, `{"tag_name":%q,"html_url":"https://example/%s","assets":[{"name":"excel-splitter-windows.zip","browser_download_url":"https://example/%s.zip"},{"name":"checksums.txt","browser_download_url":"https://example/%s.txt"}]}`, tag, tag, tag, tag)
+		}))
+	}
+	primary := releaseServer("v1.0.0")
+	defer primary.Close()
+	fallback := releaseServer("v1.2.0")
+	defer fallback.Close()
+
+	rel, err := checkLatestFrom(context.Background(), "v1.0.0", []string{primary.URL, fallback.URL}, "windows", "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel == nil || rel.Version != "v1.2.0" || rel.Source != "github" {
+		t.Fatalf("expected newest release from the fallback source, got %+v", rel)
+	}
+}
+
+func TestFetchTextRetriesTruncatedResponse(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			w.Header().Set("Content-Length", "20")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("partial"))
+			return
+		}
+		w.Write([]byte("checksums"))
+	}))
+	defer srv.Close()
+
+	got, err := fetchText(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "checksums" || calls.Load() != 2 {
+		t.Fatalf("got %q after %d requests, want full response after retry", got, calls.Load())
 	}
 }

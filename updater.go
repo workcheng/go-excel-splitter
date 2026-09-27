@@ -29,14 +29,16 @@ import (
 var version = "dev"
 
 const (
-	repoOwner        = "workcheng"
-	repoName         = "go-excel-splitter"
-	latestReleaseAPI = "https://api.github.com/repos/" + repoOwner + "/" + repoName + "/releases/latest"
-	releasesPageURL  = "https://github.com/" + repoOwner + "/" + repoName + "/releases"
-	checksumsAsset   = "checksums.txt"
-	maxDownloadSize  = 200 << 20
-	checkInterval    = 24 * time.Hour
-	maxBootAttempts  = 2 // 新版本连续这么多次未能正常启动就回滚
+	repoOwner              = "workcheng"
+	repoName               = "go-excel-splitter"
+	giteeLatestReleaseAPI  = "https://gitee.com/api/v5/repos/12581/go-excel-splitter/releases/latest"
+	githubLatestReleaseAPI = "https://api.github.com/repos/" + repoOwner + "/" + repoName + "/releases/latest"
+	giteeReleasesPageURL   = "https://gitee.com/12581/go-excel-splitter/releases"
+	githubReleasesPageURL  = "https://github.com/" + repoOwner + "/" + repoName + "/releases"
+	checksumsAsset         = "checksums.txt"
+	maxDownloadSize        = 200 << 20
+	checkInterval          = 24 * time.Hour
+	maxBootAttempts        = 2 // 新版本连续这么多次未能正常启动就回滚
 )
 
 // platformAsset 描述某个平台的发布包。
@@ -56,6 +58,7 @@ var platformAssets = map[string]platformAsset{
 // releaseInfo 是一个比当前版本新的发布
 type releaseInfo struct {
 	Version     string
+	Source      string
 	Notes       string
 	PageURL     string
 	AssetURL    string
@@ -65,7 +68,7 @@ type releaseInfo struct {
 	Blocker string
 }
 
-type githubRelease struct {
+type releaseResponse struct {
 	TagName string `json:"tag_name"`
 	Body    string `json:"body"`
 	HTMLURL string `json:"html_url"`
@@ -99,13 +102,13 @@ func isNewer(latest, current string) bool {
 func autoApplyBlocker(rel *releaseInfo, current, goarch string) string {
 	switch {
 	case rel.AssetURL == "":
-		return "该版本没有当前系统的安装包"
+		return tr("该版本没有当前系统的安装包")
 	case rel.ChecksumURL == "":
-		return "该版本缺少校验文件"
+		return tr("该版本缺少校验文件")
 	case goarch != rel.Asset.arch:
-		return fmt.Sprintf("该版本没有 %s 架构的安装包", goarch)
+		return trf("该版本没有 %s 架构的安装包", goarch)
 	case semver.Major(normalizeVersion(rel.Version)) != semver.Major(normalizeVersion(current)):
-		return "大版本升级，请手动下载安装"
+		return tr("大版本升级，请手动下载安装")
 	}
 	return ""
 }
@@ -143,34 +146,84 @@ func doWithRetry(req *http.Request) (*http.Response, error) {
 	return nil, lastErr
 }
 
-// checkLatest 查询 GitHub 最新正式版本，没有更新时返回 nil, nil
+// checkLatest 查询 Gitee 最新正式版本；Gitee 不可用或资源不完整时回退到 GitHub。
 func checkLatest(ctx context.Context, current string) (*releaseInfo, error) {
-	req, err := newRequest(ctx, latestReleaseAPI)
+	return checkLatestFrom(ctx, current, []string{giteeLatestReleaseAPI, githubLatestReleaseAPI}, runtime.GOOS, runtime.GOARCH)
+}
+
+func checkLatestFrom(ctx context.Context, current string, endpoints []string, goos, goarch string) (*releaseInfo, error) {
+	var best *releaseInfo
+	var firstErr error
+	var lastErr error
+	available := false
+	for i, endpoint := range endpoints {
+		rel, err := checkLatestAt(ctx, current, endpoint, goos, goarch)
+		if err != nil {
+			if i == 0 {
+				firstErr = err
+			}
+			lastErr = err
+			continue
+		}
+		available = true
+		if rel == nil {
+			continue
+		}
+		if i == 0 {
+			rel.Source = "gitee"
+		} else {
+			rel.Source = "github"
+		}
+		if (best == nil || isNewer(rel.Version, best.Version)) ||
+			(rel.Version == best.Version && hasReleaseAssets(rel) && !hasReleaseAssets(best)) {
+			best = rel
+		}
+	}
+	if best != nil || available {
+		return best, nil
+	}
+	if firstErr != nil {
+		if lastErr == nil {
+			lastErr = firstErr
+		}
+		return nil, fmt.Errorf(tr("更新源均不可用（Gitee: %v；GitHub: %w）"), firstErr, lastErr)
+	}
+	return nil, errors.New(tr("无法连接更新服务器"))
+}
+
+func hasReleaseAssets(rel *releaseInfo) bool {
+	return rel.AssetURL != "" && rel.ChecksumURL != ""
+}
+
+func checkLatestAt(ctx context.Context, current, endpoint string, goos, goarch string) (*releaseInfo, error) {
+	req, err := newRequest(ctx, endpoint)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-
 	resp, err := doWithRetry(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("查询最新版本失败: HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf(tr("查询最新版本失败: HTTP %d"), resp.StatusCode)
 	}
-
-	var gr githubRelease
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&gr); err != nil {
-		return nil, fmt.Errorf("解析版本信息失败: %w", err)
+	var release releaseResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&release); err != nil {
+		return nil, fmt.Errorf(tr("解析版本信息失败: %w"), err)
 	}
-	if !isNewer(gr.TagName, current) {
+	if !isNewer(release.TagName, current) {
 		return nil, nil
 	}
-	return buildReleaseInfo(gr, current, runtime.GOOS, runtime.GOARCH), nil
+	rel := buildReleaseInfo(release, current, goos, goarch)
+	if rel.PageURL == giteeReleasesPageURL && strings.HasPrefix(endpoint, "https://api.github.com/") {
+		rel.PageURL = githubReleasesPageURL
+	}
+	return rel, nil
 }
 
-func buildReleaseInfo(gr githubRelease, current, goos, goarch string) *releaseInfo {
+func buildReleaseInfo(gr releaseResponse, current, goos, goarch string) *releaseInfo {
 	rel := &releaseInfo{
 		Version: gr.TagName,
 		Notes:   gr.Body,
@@ -178,7 +231,7 @@ func buildReleaseInfo(gr githubRelease, current, goos, goarch string) *releaseIn
 		Asset:   platformAssets[goos],
 	}
 	if rel.PageURL == "" {
-		rel.PageURL = releasesPageURL
+		rel.PageURL = giteeReleasesPageURL
 	}
 	for _, a := range gr.Assets {
 		switch {
@@ -207,20 +260,36 @@ func parseChecksums(text string) map[string]string {
 }
 
 func fetchText(ctx context.Context, url string) (string, error) {
-	req, err := newRequest(ctx, url)
-	if err != nil {
-		return "", err
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(time.Duration(attempt) * time.Second):
+			}
+		}
+		req, err := newRequest(ctx, url)
+		if err != nil {
+			return "", err
+		}
+		resp, err := doWithRetry(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+		}
+		data, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		resp.Body.Close()
+		if readErr == nil {
+			return string(data), nil
+		}
+		lastErr = readErr
 	}
-	resp, err := doWithRetry(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	return string(data), err
+	return "", lastErr
 }
 
 type progressWriter struct {
@@ -237,19 +306,19 @@ func (p *progressWriter) Write(b []byte) (int, error) {
 }
 
 // downloadUpdate 下载并校验新版本，解压出的可执行文件放在 exe 同目录的 exe+".new"，
-// 保证后续替换是同一文件系统内的原子 rename。mirror 非空时作为下载地址前缀，校验文件始终从 GitHub 获取。
+// 保证后续替换是同一文件系统内的原子 rename。校验文件和安装包来自同一发布源。
 func downloadUpdate(ctx context.Context, rel *releaseInfo, exe, mirror string, onProgress func(done, total int64)) (string, error) {
 	checksums, err := fetchText(ctx, rel.ChecksumURL)
 	if err != nil {
-		return "", fmt.Errorf("下载校验文件失败: %w", err)
+		return "", fmt.Errorf(tr("下载校验文件失败: %w"), err)
 	}
 	want := parseChecksums(checksums)[rel.Asset.archive]
 	if want == "" {
-		return "", fmt.Errorf("校验文件中没有 %s", rel.Asset.archive)
+		return "", fmt.Errorf(tr("校验文件中没有 %s"), rel.Asset.archive)
 	}
 
 	url := rel.AssetURL
-	if mirror != "" {
+	if mirror != "" && rel.Source != "gitee" {
 		url = strings.TrimRight(mirror, "/") + "/" + url
 	}
 	req, err := newRequest(ctx, url)
@@ -258,14 +327,14 @@ func downloadUpdate(ctx context.Context, rel *releaseInfo, exe, mirror string, o
 	}
 	resp, err := doWithRetry(req)
 	if err != nil {
-		return "", fmt.Errorf("下载更新失败: %w", err)
+		return "", fmt.Errorf(tr("下载更新失败: %w"), err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("下载更新失败: HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf(tr("下载更新失败: HTTP %d"), resp.StatusCode)
 	}
 	if resp.ContentLength > maxDownloadSize {
-		return "", fmt.Errorf("更新包过大: %d 字节", resp.ContentLength)
+		return "", fmt.Errorf(tr("更新包过大: %d 字节"), resp.ContentLength)
 	}
 
 	tmp, err := os.CreateTemp("", "excel-splitter-update-*")
@@ -279,13 +348,13 @@ func downloadUpdate(ctx context.Context, rel *releaseInfo, exe, mirror string, o
 	progress := &progressWriter{total: resp.ContentLength, onProgress: onProgress}
 	n, err := io.Copy(io.MultiWriter(tmp, hash, progress), io.LimitReader(resp.Body, maxDownloadSize+1))
 	if err != nil {
-		return "", fmt.Errorf("下载更新失败: %w", err)
+		return "", fmt.Errorf(tr("下载更新失败: %w"), err)
 	}
 	if n > maxDownloadSize {
-		return "", errors.New("更新包过大")
+		return "", errors.New(tr("更新包过大"))
 	}
 	if got := hex.EncodeToString(hash.Sum(nil)); got != want {
-		return "", fmt.Errorf("文件校验失败，下载内容可能已损坏（期望 %s，实际 %s）", want, got)
+		return "", fmt.Errorf(tr("文件校验失败，下载内容可能已损坏（期望 %s，实际 %s）"), want, got)
 	}
 	if err := tmp.Close(); err != nil {
 		return "", err
@@ -293,7 +362,7 @@ func downloadUpdate(ctx context.Context, rel *releaseInfo, exe, mirror string, o
 
 	newPath := exe + ".new"
 	if err := extractBinary(tmp.Name(), rel.Asset.archive, rel.Asset.binary, newPath); err != nil {
-		return "", fmt.Errorf("解压更新失败: %w", err)
+		return "", fmt.Errorf(tr("解压更新失败: %w"), err)
 	}
 	return newPath, nil
 }
@@ -317,7 +386,7 @@ func extractBinary(archivePath, archiveName, binaryName, dest string) error {
 				return writeExecutable(dest, rc)
 			}
 		}
-		return fmt.Errorf("压缩包中没有 %s", binaryName)
+		return fmt.Errorf(tr("压缩包中没有 %s"), binaryName)
 	}
 
 	f, err := os.Open(archivePath)
@@ -330,17 +399,17 @@ func extractBinary(archivePath, archiveName, binaryName, dest string) error {
 		return err
 	}
 	defer gz.Close()
-	tr := tar.NewReader(gz)
+	tarReader := tar.NewReader(gz)
 	for {
-		hdr, err := tr.Next()
+		hdr, err := tarReader.Next()
 		if err == io.EOF {
-			return fmt.Errorf("压缩包中没有 %s", binaryName)
+			return fmt.Errorf(tr("压缩包中没有 %s"), binaryName)
 		}
 		if err != nil {
 			return err
 		}
 		if hdr.Typeflag == tar.TypeReg && path.Base(hdr.Name) == binaryName {
-			return writeExecutable(dest, tr)
+			return writeExecutable(dest, tarReader)
 		}
 	}
 }
@@ -355,7 +424,7 @@ func writeExecutable(dest string, r io.Reader) error {
 		err = closeErr
 	}
 	if err == nil && n > maxDownloadSize {
-		err = errors.New("可执行文件过大")
+		err = errors.New(tr("可执行文件过大"))
 	}
 	if err != nil {
 		os.Remove(dest)
@@ -375,11 +444,11 @@ func currentExecutable() (string, error) {
 // checkCanReplace 检查当前程序能否被原地替换
 func checkCanReplace(exe string) error {
 	if runtime.GOOS == "darwin" && strings.Contains(exe, ".app/Contents/MacOS") {
-		return errors.New("macOS 应用包暂不支持自动更新")
+		return errors.New(tr("macOS 应用包暂不支持自动更新"))
 	}
 	f, err := os.CreateTemp(filepath.Dir(exe), ".excel-splitter-write-test-*")
 	if err != nil {
-		return fmt.Errorf("程序所在目录没有写权限: %w", err)
+		return fmt.Errorf(tr("程序所在目录没有写权限: %w"), err)
 	}
 	f.Close()
 	os.Remove(f.Name())
@@ -393,17 +462,17 @@ func applyUpdate(statePath, exe, newPath, from, to string) error {
 	os.Remove(oldPath)
 	if err := os.Rename(exe, oldPath); err != nil {
 		os.Remove(newPath)
-		return fmt.Errorf("备份当前版本失败: %w", err)
+		return fmt.Errorf(tr("备份当前版本失败: %w"), err)
 	}
 	if err := os.Rename(newPath, exe); err != nil {
 		os.Rename(oldPath, exe)
 		os.Remove(newPath)
-		return fmt.Errorf("替换程序失败: %w", err)
+		return fmt.Errorf(tr("替换程序失败: %w"), err)
 	}
 	// 杀毒软件可能会立即删除新文件
 	if _, err := os.Stat(exe); err != nil {
 		os.Rename(oldPath, exe)
-		return fmt.Errorf("新版本文件不可用，可能被安全软件拦截: %w", err)
+		return fmt.Errorf(tr("新版本文件不可用，可能被安全软件拦截: %w"), err)
 	}
 
 	err := modifyUpdateState(statePath, func(s *updateState) {
@@ -436,6 +505,7 @@ type updateState struct {
 	LastCheck        time.Time      `json:"last_check"`
 	SkippedVersion   string         `json:"skipped_version"`
 	Mirror           string         `json:"mirror"`
+	Language         string         `json:"language,omitempty"`
 	Pending          *pendingUpdate `json:"pending,omitempty"`
 	RolledBackFrom   string         `json:"rolled_back_from,omitempty"`
 }
@@ -572,21 +642,21 @@ func updateLogf(format string, args ...any) {
 
 // runCLIUpdate 处理命令行 --update，返回进程退出码
 func runCLIUpdate() int {
-	fmt.Printf("当前版本: %s\n", version)
+	fmt.Println(trf("当前版本: %s", version))
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	rel, err := checkLatest(ctx, version)
 	cancel()
 	if err != nil {
-		fmt.Printf("检查更新失败: %v\n", err)
+		fmt.Println(trf("检查更新失败: %v", err))
 		return 1
 	}
 	if rel == nil {
-		fmt.Println("已是最新版本")
+		fmt.Println(tr("已是最新版本"))
 		return 0
 	}
-	fmt.Printf("发现新版本: %s\n", rel.Version)
+	fmt.Println(trf("发现新版本: %s", rel.Version))
 	if rel.Blocker != "" {
-		fmt.Printf("无法自动更新（%s），请手动下载: %s\n", rel.Blocker, rel.PageURL)
+		fmt.Println(trf("无法自动更新（%s），请手动下载: %s", rel.Blocker, rel.PageURL))
 		return 1
 	}
 
@@ -595,12 +665,12 @@ func runCLIUpdate() int {
 		err = checkCanReplace(exe)
 	}
 	if err != nil {
-		fmt.Printf("无法自动更新（%v），请手动下载: %s\n", err, rel.PageURL)
+		fmt.Println(trf("无法自动更新（%v），请手动下载: %s", err, rel.PageURL))
 		return 1
 	}
 	statePath, err := updateStatePath()
 	if err != nil {
-		fmt.Printf("无法访问配置目录: %v\n", err)
+		fmt.Println(trf("无法访问配置目录: %v", err))
 		return 1
 	}
 	state, _ := loadUpdateState(statePath)
@@ -612,16 +682,16 @@ func runCLIUpdate() int {
 		}
 		if p := int(done * 100 / total); p/10 != lastPercent/10 {
 			lastPercent = p
-			fmt.Printf("下载中... %d%%\n", p)
+			fmt.Println(trf("下载中... %d%%", p))
 		}
 	})
 	if err == nil {
 		err = applyUpdate(statePath, exe, newPath, version, rel.Version)
 	}
 	if err != nil {
-		fmt.Printf("更新失败: %v\n", err)
+		fmt.Println(trf("更新失败: %v", err))
 		return 1
 	}
-	fmt.Printf("已更新到 %s，重新运行程序即可生效\n", rel.Version)
+	fmt.Println(trf("已更新到 %s，重新运行程序即可生效", rel.Version))
 	return 0
 }

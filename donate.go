@@ -21,8 +21,8 @@ func showDonateDialog(w fyne.Window) {
 	img.FillMode = canvas.ImageFillContain
 	img.SetMinSize(fyne.NewSize(260, 260))
 
-	tip := widget.NewLabel("觉得好用？微信扫码请作者喝杯咖啡，感谢支持！")
+	tip := widget.NewLabel(tr("觉得好用？微信扫码请作者喝杯咖啡，感谢支持！"))
 	tip.Alignment = fyne.TextAlignCenter
 
-	dialog.NewCustom("打赏作者", "关闭", container.NewVBox(img, tip), w).Show()
+	dialog.NewCustom(tr("打赏作者"), tr("关闭"), container.NewVBox(img, tip), w).Show()
 }

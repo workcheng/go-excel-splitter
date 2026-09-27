@@ -1,11 +1,11 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -68,7 +68,17 @@ var (
 	outputDir   string
 	statusLabel *widget.Label
 	myWindow    fyne.Window // 全局窗口变量，用于拖放处理
+	statusKey   = "提示：可以将Excel文件直接拖放到下方区域"
+	statusArgs  []any
 )
+
+func setStatus(key string, args ...any) {
+	statusKey = key
+	statusArgs = args
+	if statusLabel != nil {
+		statusLabel.SetText(trf(statusKey, statusArgs...))
+	}
+}
 
 // generateKey 根据选择的列生成文件名
 func generateKey(row map[string]string, splitColumns []string) string {
@@ -90,21 +100,21 @@ func generateKey(row map[string]string, splitColumns []string) string {
 func readExcelHeaders(inputFile string) ([]string, error) {
 	f, err := excelize.OpenFile(inputFile)
 	if err != nil {
-		return nil, fmt.Errorf("打开文件失败: %w", err)
+		return nil, fmt.Errorf(tr("打开文件失败: %w"), err)
 	}
 	defer f.Close()
 
 	sheets := f.GetSheetList()
 	if len(sheets) == 0 {
-		return nil, fmt.Errorf("Excel文件中没有工作表")
+		return nil, errors.New(tr("Excel文件中没有工作表"))
 	}
 
 	rows, err := f.GetRows(sheets[0])
 	if err != nil {
-		return nil, fmt.Errorf("读取工作表失败: %w", err)
+		return nil, fmt.Errorf(tr("读取工作表失败: %w"), err)
 	}
 	if len(rows) == 0 || len(rows[0]) == 0 {
-		return nil, fmt.Errorf("表头为空")
+		return nil, errors.New(tr("表头为空"))
 	}
 
 	return rows[0], nil
@@ -155,7 +165,7 @@ func saveGroup(task SaveTask) string {
 
 	// 保存文件
 	if err := f.SaveAs(outputPath); err != nil {
-		return fmt.Sprintf("✗ %s: %s", task.Key, err.Error())
+		return trf("✗ %s: %s", task.Key, err.Error())
 	}
 	return fmt.Sprintf("✓ %s.xlsx", task.Key)
 }
@@ -164,7 +174,7 @@ func saveGroup(task SaveTask) string {
 func splitExcelParallel(inputFile, outputFolder string, splitColumns []string, maxWorkers int) ([]string, time.Duration, error) {
 	startTime := time.Now()
 	if len(splitColumns) == 0 {
-		return nil, 0, fmt.Errorf("请至少选择一个分割列")
+		return nil, 0, errors.New(tr("请至少选择一个分割列"))
 	}
 
 	fmt.Printf("📂 读取文件: %s\n", inputFile)
@@ -173,7 +183,7 @@ func splitExcelParallel(inputFile, outputFolder string, splitColumns []string, m
 	// 打开Excel文件
 	f, err := excelize.OpenFile(inputFile)
 	if err != nil {
-		return nil, 0, fmt.Errorf("打开文件失败: %w", err)
+		return nil, 0, fmt.Errorf(tr("打开文件失败: %w"), err)
 	}
 	defer f.Close()
 	fmt.Printf("✅ 文件打开完成，耗时: %.2f秒\n", time.Since(fileOpenStart).Seconds())
@@ -181,7 +191,7 @@ func splitExcelParallel(inputFile, outputFolder string, splitColumns []string, m
 	// 获取所有工作表
 	sheets := f.GetSheetList()
 	if len(sheets) == 0 {
-		return nil, 0, fmt.Errorf("Excel文件中没有工作表")
+		return nil, 0, errors.New(tr("Excel文件中没有工作表"))
 	}
 
 	// 使用第一个工作表
@@ -192,12 +202,12 @@ func splitExcelParallel(inputFile, outputFolder string, splitColumns []string, m
 	rowsStart := time.Now()
 	rows, err := f.GetRows(sheetName)
 	if err != nil {
-		return nil, 0, fmt.Errorf("读取工作表失败: %w", err)
+		return nil, 0, fmt.Errorf(tr("读取工作表失败: %w"), err)
 	}
 	fmt.Printf("✅ 读取所有行完成，耗时: %.2f秒\n", time.Since(rowsStart).Seconds())
 
 	if len(rows) < 2 {
-		return nil, 0, fmt.Errorf("数据为空")
+		return nil, 0, errors.New(tr("数据为空"))
 	}
 
 	// 获取表头和数据
@@ -218,7 +228,7 @@ func splitExcelParallel(inputFile, outputFolder string, splitColumns []string, m
 	}
 	for col, idx := range splitColIndex {
 		if idx == -1 {
-			return nil, 0, fmt.Errorf("缺少分割列: %s", col)
+			return nil, 0, fmt.Errorf(tr("缺少分割列: %s"), col)
 		}
 	}
 	fmt.Printf("✅ 分割列检查完成，耗时: %.2f秒\n", time.Since(checkColsStart).Seconds())
@@ -331,25 +341,26 @@ func guiVersion() {
 	if !prepareUpdateOnLaunch() {
 		return // 新版本启动失败，已回滚并重启旧版本
 	}
+	loadLanguagePreference()
 
 	myApp := app.New()
 	myApp.SetIcon(appIcon)
-	myWindow = myApp.NewWindow("Excel闪电拆分工具 " + version) // 赋值给全局变量
+	myWindow = myApp.NewWindow(trf("Excel闪电拆分工具 %s", version)) // 赋值给全局变量
 	// 设置窗口大小为更适合一般应用的尺寸
 	myWindow.SetIcon(appIcon)
 	myWindow.Resize(fyne.NewSize(800, 600))
 
 	// 使用两个Label组件分别显示主标题和副标题
-	mainLabel := widget.NewLabel("Excel闪电拆分工具")
+	mainLabel := widget.NewLabel(tr("Excel闪电拆分工具"))
 	mainLabel.Alignment = fyne.TextAlignCenter
 
 	// 创建副标题
-	subLabel := widget.NewLabel("速度比VBA快10-20倍")
+	subLabel := widget.NewLabel(tr("速度比VBA快10-20倍"))
 	subLabel.Alignment = fyne.TextAlignCenter
 	// 通过调整Label的大小来间接调整文本大小
 	subLabel.Resize(fyne.NewSize(400, 20))
 
-	statusLabel = widget.NewLabel("提示：可以将Excel文件直接拖放到下方区域")
+	statusLabel = widget.NewLabel(trf(statusKey, statusArgs...))
 	statusLabel.Alignment = fyne.TextAlignCenter
 
 	var outputFolder string
@@ -359,7 +370,8 @@ func guiVersion() {
 	// 重置全局变量
 	inputFile = ""
 
-	columnLabel := widget.NewLabel("请选择Excel文件后选择分割列（可多选）")
+	columnLabel := widget.NewLabel(tr("请选择Excel文件后选择分割列（可多选）"))
+	columnCount := 0
 	columnCheckGroup := widget.NewCheckGroup([]string{}, func(selected []string) {
 		selectedSplitColumns = append([]string(nil), selected...)
 	})
@@ -374,7 +386,7 @@ func guiVersion() {
 		if _, err := os.Stat(outputFolder); os.IsNotExist(err) {
 			err := os.MkdirAll(outputFolder, 0755)
 			if err != nil {
-				statusLabel.SetText(fmt.Sprintf("错误: 无法创建输出文件夹: %v", err))
+				setStatus("错误: 无法创建输出文件夹: %v", err)
 				return
 			}
 		}
@@ -386,18 +398,20 @@ func guiVersion() {
 			columnCheckGroup.Disable()
 			columnCheckGroup.Refresh()
 			selectedSplitColumns = nil
-			statusLabel.SetText(fmt.Sprintf("读取表头失败: %v", err))
-			dialog.ShowError(err, myWindow)
+			columnCount = 0
+			setStatus("读取表头失败: %v", err)
+			dialog.ShowError(fmt.Errorf(tr("读取表头失败: %v"), err), myWindow)
 			return
 		}
 
 		selectedSplitColumns = defaultSplitColumns(headers)
+		columnCount = len(headers)
 		columnCheckGroup.Options = headers
 		columnCheckGroup.Enable()
 		columnCheckGroup.SetSelected(selectedSplitColumns)
 		columnCheckGroup.Refresh()
-		columnLabel.SetText(fmt.Sprintf("选择分割列（可多选，共 %d 列）", len(headers)))
-		statusLabel.SetText(fmt.Sprintf("已选择: %s\n输出到: %s", filepath.Base(inputFile), outputFolder))
+		columnLabel.SetText(trf("选择分割列（可多选，共 %d 列）", len(headers)))
+		setStatus("已选择: %s\n输出到: %s", filepath.Base(inputFile), outputFolder)
 	}
 
 	// 添加一个简单的拖放支持：检查命令行参数
@@ -412,10 +426,9 @@ func guiVersion() {
 	}
 
 	// 创建拖放区域（使用简单的标签提示）
-	dropArea := container.NewVBox(
-		widget.NewLabelWithStyle("拖放Excel文件到此处", fyne.TextAlignCenter, fyne.TextStyle{Italic: true}),
-		widget.NewLabelWithStyle("（或使用下方按钮选择文件）", fyne.TextAlignCenter, fyne.TextStyle{}),
-	)
+	dropLabel := widget.NewLabelWithStyle(tr("拖放Excel文件到此处"), fyne.TextAlignCenter, fyne.TextStyle{Italic: true})
+	dropHint := widget.NewLabelWithStyle(tr("（或使用下方按钮选择文件）"), fyne.TextAlignCenter, fyne.TextStyle{})
+	dropArea := container.NewVBox(dropLabel, dropHint)
 
 	// 设置拖放区域大小
 	dropArea.Resize(fyne.NewSize(400, 100))
@@ -434,12 +447,12 @@ func guiVersion() {
 				loadSelectedFile(filePath)
 			} else {
 				// 如果没有找到有效的Excel文件，显示错误
-				dialog.ShowInformation("错误", "请拖放有效的Excel文件（.xlsx或.xls格式）", myWindow)
+				dialog.ShowInformation(tr("错误"), tr("请拖放有效的Excel文件（.xlsx或.xls格式）"), myWindow)
 			}
 		}
 	})
 
-	inputBtn := widget.NewButton("选择Excel文件", func() {
+	inputBtn := widget.NewButton(tr("选择Excel文件"), func() {
 		// 获取当前应用程序所在的文件夹
 		execPath, _ := os.Executable()
 		currentDir := filepath.Dir(execPath)
@@ -465,7 +478,7 @@ func guiVersion() {
 		dialog.Show()
 	})
 
-	outputBtn := widget.NewButton("选择输出文件夹", func() {
+	outputBtn := widget.NewButton(tr("选择输出文件夹"), func() {
 		// 获取当前应用程序所在的文件夹
 		execPath, _ := os.Executable()
 		currentDir := filepath.Dir(execPath)
@@ -476,7 +489,7 @@ func guiVersion() {
 				return
 			}
 			outputFolder = list.Path()
-			statusLabel.SetText(fmt.Sprintf("输出到: %s", outputFolder))
+			setStatus("输出到: %s", outputFolder)
 		}, myWindow)
 
 		// 设置默认打开位置为当前应用所在的文件夹
@@ -489,13 +502,13 @@ func guiVersion() {
 		dialog.Show()
 	})
 
-	runBtn = widget.NewButton("开始拆分", func() {
+	runBtn = widget.NewButton(tr("开始拆分"), func() {
 		if inputFile == "" {
-			dialog.ShowInformation("提示", "请先选择Excel文件", myWindow)
+			dialog.ShowInformation(tr("提示"), tr("请先选择Excel文件"), myWindow)
 			return
 		}
 		if len(selectedSplitColumns) == 0 {
-			dialog.ShowInformation("提示", "请至少选择一个分割列", myWindow)
+			dialog.ShowInformation(tr("提示"), tr("请至少选择一个分割列"), myWindow)
 			return
 		}
 		splitColumns := append([]string(nil), selectedSplitColumns...)
@@ -504,7 +517,7 @@ func guiVersion() {
 		runBtn.Disable()
 		splitting.Store(true)
 
-		statusLabel.SetText("处理中...")
+		setStatus("处理中...")
 
 		// 在goroutine中执行
 		go func() {
@@ -516,7 +529,7 @@ func guiVersion() {
 			r, elapsed, err := splitExcelParallel(inputFile, outputFolder, splitColumns, 8)
 			if err != nil {
 				dialog.ShowError(err, myWindow)
-				statusLabel.SetText(fmt.Sprintf("错误: %v", err))
+				setStatus("错误: %v", err)
 				return
 			}
 
@@ -525,9 +538,9 @@ func guiVersion() {
 			// 格式化耗时
 			minutes := int(elapsed.Minutes())
 			seconds := elapsed.Seconds()
-			timeStr := strconv.Itoa(minutes) + "分" + fmt.Sprintf("%.2f秒", seconds)
+			timeStr := trf("%d分%.2f秒", minutes, seconds)
 			if minutes <= 0 {
-				timeStr = fmt.Sprintf("%.2f秒", seconds)
+				timeStr = trf("%.2f秒", seconds)
 			}
 
 			// 将结果数组转换为按行展示的格式，并添加数字编号
@@ -541,19 +554,33 @@ func guiVersion() {
 			}
 
 			// 创建自定义对话框，支持复制文本
-			showCopyableDialog("完成", fmt.Sprintf("✅ 拆分完成！\n\n分割列: %s\n总耗时: %s\n\n执行结果（总共 %d 条记录）:\n\n%s", strings.Join(splitColumns, "、"), timeStr, len(r), resultLines), myWindow)
-			statusLabel.SetText("处理完成！")
+			showCopyableDialog(tr("完成"), trf("✅ 拆分完成！\n\n分割列: %s\n总耗时: %s\n\n执行结果（总共 %d 条记录）:\n\n%s", strings.Join(splitColumns, tr("、")), timeStr, len(r), resultLines), myWindow)
+			setStatus("处理完成！")
 		}()
 	})
 	runBtn.Importance = widget.HighImportance
 
-	checkUpdateBtn := widget.NewButton("检查更新", func() {
-		checkForUpdates(myApp, myWindow, true)
-	})
-	donateBtn := widget.NewButton("打赏作者", func() {
-		showDonateDialog(myWindow)
-	})
-	versionBar := container.NewHBox(widget.NewLabel("版本 "+version), layout.NewSpacer(), donateBtn, checkUpdateBtn)
+	versionLabel := widget.NewLabel(trf("版本 %s", version))
+	versionBar := container.NewHBox(layout.NewSpacer(), versionLabel)
+	refreshLocalizedUI = func() {
+		myWindow.SetTitle(trf("Excel闪电拆分工具 %s", version))
+		mainLabel.SetText(tr("Excel闪电拆分工具"))
+		subLabel.SetText(tr("速度比VBA快10-20倍"))
+		if columnCount == 0 {
+			columnLabel.SetText(tr("请选择Excel文件后选择分割列（可多选）"))
+		} else {
+			columnLabel.SetText(trf("选择分割列（可多选，共 %d 列）", columnCount))
+		}
+		dropLabel.SetText(tr("拖放Excel文件到此处"))
+		dropHint.SetText(tr("（或使用下方按钮选择文件）"))
+		inputBtn.SetText(tr("选择Excel文件"))
+		outputBtn.SetText(tr("选择输出文件夹"))
+		runBtn.SetText(tr("开始拆分"))
+		versionLabel.SetText(trf("版本 %s", version))
+		statusLabel.SetText(trf(statusKey, statusArgs...))
+		myWindow.SetMainMenu(settingsMenu(myApp, myWindow))
+	}
+	refreshLocalizedUI()
 
 	content := container.NewVBox(
 		// mainLabel,
@@ -607,7 +634,7 @@ func showCopyableDialog(title, content string, win fyne.Window) {
 	scrollContainer := container.NewScroll(textEntry)
 
 	// 创建对话框
-	dialog := dialog.NewCustom(title, "关闭",
+	dialog := dialog.NewCustom(title, tr("关闭"),
 		scrollContainer, win)
 
 	// 设置对话框大小，与新窗口比例协调
@@ -618,10 +645,11 @@ func showCopyableDialog(title, content string, win fyne.Window) {
 }
 
 func main() {
-	fmt.Printf("Excel闪电拆分工具 %s\n", version)
-	fmt.Println("使用方法: excel-splitter <输入文件> [输出文件夹]")
-	fmt.Println("         excel-splitter --update   检查并安装更新")
-	fmt.Println("         excel-splitter --version  显示版本")
+	loadLanguagePreference()
+	fmt.Println(trf("Excel闪电拆分工具 %s", version))
+	fmt.Println(tr("使用方法: excel-splitter <输入文件> [输出文件夹]"))
+	fmt.Println(tr("         excel-splitter --update   检查并安装更新"))
+	fmt.Println(tr("         excel-splitter --version  显示版本"))
 	fmt.Printf("命令行参数数量: %d\n", len(os.Args))
 	for i, arg := range os.Args {
 		fmt.Printf("参数 %d: %s\n", i, arg)
@@ -642,7 +670,7 @@ func main() {
 		filePath := os.Args[1]
 		if strings.HasSuffix(strings.ToLower(filePath), ".xlsx") || strings.HasSuffix(strings.ToLower(filePath), ".xls") {
 			// 启动GUI模式并处理拖放的文件
-			fmt.Println("启动GUI界面并处理拖放的文件...")
+			fmt.Println(tr("启动GUI界面并处理拖放的文件..."))
 			guiVersion()
 		} else {
 			// 命令行模式
@@ -672,7 +700,7 @@ func main() {
 		}
 	} else {
 		// 启动GUI
-		fmt.Println("启动GUI界面...")
+		fmt.Println(tr("启动GUI界面..."))
 		guiVersion()
 	}
 }

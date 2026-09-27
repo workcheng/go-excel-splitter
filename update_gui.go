@@ -53,8 +53,8 @@ func startUpdateTasks(a fyne.App, w fyne.Window) {
 	if state.RolledBackFrom != "" {
 		failed := state.RolledBackFrom
 		modifyUpdateState(statePath, func(s *updateState) { s.RolledBackFrom = "" })
-		dialog.ShowInformation("更新已回退",
-			fmt.Sprintf("新版本 %s 启动失败，已自动回退到 %s。\n该版本将不再自动提示。", failed, version), w)
+		dialog.ShowInformation(tr("更新已回退"),
+			trf("新版本 %s 启动失败，已自动回退到 %s。\n该版本将不再自动提示。", failed, version), w)
 	}
 
 	go func() {
@@ -81,14 +81,14 @@ func startUpdateTasks(a fyne.App, w fyne.Window) {
 func checkForUpdates(a fyne.App, w fyne.Window, manual bool) {
 	if version == "dev" {
 		if manual {
-			dialog.ShowInformation("检查更新", "开发版本不支持检查更新", w)
+			dialog.ShowInformation(tr("检查更新"), tr("开发版本不支持检查更新"), w)
 		}
 		return
 	}
 	statePath, err := updateStatePath()
 	if err != nil {
 		if manual {
-			dialog.ShowError(fmt.Errorf("无法访问配置目录: %w", err), w)
+			dialog.ShowError(fmt.Errorf(tr("无法访问配置目录: %w"), err), w)
 		}
 		return
 	}
@@ -100,7 +100,7 @@ func checkForUpdates(a fyne.App, w fyne.Window, manual bool) {
 		if err != nil {
 			updateLogf("检查更新失败: %v", err)
 			if manual {
-				fyne.Do(func() { dialog.ShowError(fmt.Errorf("无法连接更新服务器: %w", err), w) })
+				fyne.Do(func() { dialog.ShowError(fmt.Errorf(tr("无法连接更新服务器: %w"), err), w) })
 			}
 			return
 		}
@@ -108,7 +108,7 @@ func checkForUpdates(a fyne.App, w fyne.Window, manual bool) {
 
 		if rel == nil {
 			if manual {
-				fyne.Do(func() { dialog.ShowInformation("检查更新", "当前已是最新版本 "+version, w) })
+				fyne.Do(func() { dialog.ShowInformation(tr("检查更新"), trf("当前已是最新版本 %s", version), w) })
 			}
 			return
 		}
@@ -126,28 +126,28 @@ func checkForUpdates(a fyne.App, w fyne.Window, manual bool) {
 }
 
 func showUpdateDialog(a fyne.App, w fyne.Window, rel *releaseInfo, statePath string) {
-	header := widget.NewLabel(fmt.Sprintf("当前版本 %s，最新版本 %s", version, rel.Version))
+	header := widget.NewLabel(trf("当前版本 %s，最新版本 %s", version, rel.Version))
 	notes := widget.NewRichTextFromMarkdown(rel.Notes)
 	notes.Wrapping = fyne.TextWrapWord
 	notesScroll := container.NewVScroll(notes)
 	notesScroll.SetMinSize(fyne.NewSize(480, 240))
 	top := container.NewVBox(header)
 	if rel.Blocker != "" {
-		top.Add(widget.NewLabel("无法自动更新：" + rel.Blocker))
+		top.Add(widget.NewLabel(trf("无法自动更新：%s", rel.Blocker)))
 	}
 
-	d := dialog.NewCustomWithoutButtons("发现新版本 "+rel.Version, container.NewBorder(top, nil, nil, nil, notesScroll), w)
-	laterBtn := widget.NewButton("稍后", d.Hide)
-	skipBtn := widget.NewButton("跳过此版本", func() {
+	d := dialog.NewCustomWithoutButtons(trf("发现新版本 %s", rel.Version), container.NewBorder(top, nil, nil, nil, notesScroll), w)
+	laterBtn := widget.NewButton(tr("稍后"), d.Hide)
+	skipBtn := widget.NewButton(tr("跳过此版本"), func() {
 		modifyUpdateState(statePath, func(s *updateState) { s.SkippedVersion = rel.Version })
 		d.Hide()
 	})
-	updateBtn := widget.NewButton("立即更新", func() {
+	updateBtn := widget.NewButton(tr("立即更新"), func() {
 		d.Hide()
 		runUpdate(a, w, rel, statePath)
 	})
 	if rel.Blocker != "" {
-		updateBtn.SetText("前往下载")
+		updateBtn.SetText(tr("前往下载"))
 		updateBtn.OnTapped = func() {
 			d.Hide()
 			openReleasePage(a, rel)
@@ -167,7 +167,7 @@ func openReleasePage(a fyne.App, rel *releaseInfo) {
 // runUpdate 下载、校验并替换程序，完成后询问是否立即重启
 func runUpdate(a fyne.App, w fyne.Window, rel *releaseInfo, statePath string) {
 	if splitting.Load() {
-		dialog.ShowInformation("提示", "请等待拆分完成后再更新", w)
+		dialog.ShowInformation(tr("提示"), tr("请等待拆分完成后再更新"), w)
 		return
 	}
 	exe, err := currentExecutable()
@@ -175,7 +175,7 @@ func runUpdate(a fyne.App, w fyne.Window, rel *releaseInfo, statePath string) {
 		err = checkCanReplace(exe)
 	}
 	if err != nil {
-		dialog.ShowConfirm("无法自动更新", fmt.Sprintf("%v\n\n是否打开下载页面手动下载？", err), func(ok bool) {
+		dialog.ShowConfirm(tr("无法自动更新"), trf("%v\n\n是否打开下载页面手动下载？", err), func(ok bool) {
 			if ok {
 				openReleasePage(a, rel)
 			}
@@ -185,8 +185,8 @@ func runUpdate(a fyne.App, w fyne.Window, rel *releaseInfo, statePath string) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	bar := widget.NewProgressBar()
-	progress := dialog.NewCustomWithoutButtons("正在下载 "+rel.Version, container.NewPadded(bar), w)
-	progress.SetButtons([]fyne.CanvasObject{widget.NewButton("取消", cancel)})
+	progress := dialog.NewCustomWithoutButtons(trf("正在下载 %s", rel.Version), container.NewPadded(bar), w)
+	progress.SetButtons([]fyne.CanvasObject{widget.NewButton(tr("取消"), cancel)})
 	progress.Resize(fyne.NewSize(400, 140))
 	progress.Show()
 
@@ -214,15 +214,15 @@ func runUpdate(a fyne.App, w fyne.Window, rel *releaseInfo, statePath string) {
 			}
 			if err != nil {
 				updateLogf("更新失败: %v", err)
-				dialog.ShowError(fmt.Errorf("更新失败: %w", err), w)
+				dialog.ShowError(fmt.Errorf(tr("更新失败: %w"), err), w)
 				return
 			}
-			dialog.ShowConfirm("更新完成", fmt.Sprintf("已更新到 %s，是否立即重启？\n选择“否”将在下次启动时生效。", rel.Version), func(ok bool) {
+			dialog.ShowConfirm(tr("更新完成"), trf("已更新到 %s，是否立即重启？\n选择“否”将在下次启动时生效。", rel.Version), func(ok bool) {
 				if !ok {
 					return
 				}
 				if err := restartSelf(exe); err != nil {
-					dialog.ShowError(fmt.Errorf("重启失败，请手动重新打开程序: %w", err), w)
+					dialog.ShowError(fmt.Errorf(tr("重启失败，请手动重新打开程序: %w"), err), w)
 					return
 				}
 				a.Quit()
